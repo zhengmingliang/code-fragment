@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 背景动画粒子 */
+        .particles {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            animation: float 20s infinite linear;
+        }
+
+        @keyframes float {
+            from {
+                transform: translateY(100vh) translateX(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            to {
+                transform: translateY(-100vh) translateX(100px);
+                opacity: 0;
+            }
+        }
+
+        /* 时钟容器 */
+        .clock-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 30px;
+            padding: 40px 60px;
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            text-align: center;
+            position: relative;
+            z-index: 10;
+            animation: fadeIn 1s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* 日期样式 */
+        .date {
+            color: #ffffff;
+            font-size: clamp(1.5rem, 4vw, 2.5rem);
+            font-weight: 300;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+            opacity: 0.9;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        /* 时间样式 */
+        .time {
+            color: #ffffff;
+            font-size: clamp(3rem, 8vw, 5rem);
+            font-weight: 200;
+            letter-spacing: 4px;
+            font-variant-numeric: tabular-nums;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            position: relative;
+            display: inline-block;
+        }
+
+        /* 时间数字动画 */
+        .time-digit {
+            display: inline-block;
+            transition: transform 0.3s ease;
+        }
+
+        .time-digit:hover {
+            transform: translateY(-5px);
+        }
+
+        /* 冒号闪烁效果 */
+        .colon {
+            animation: blink 1s infinite;
+            display: inline-block;
+            width: 0.5em;
+            text-align: center;
+        }
+
+        @keyframes blink {
+            0%, 49% {
+                opacity: 1;
+            }
+            50%, 100% {
+                opacity: 0.3;
+            }
+        }
+
+        /* 星期显示 */
+        .weekday {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: clamp(1rem, 2.5vw, 1.2rem);
+            margin-top: 15px;
+            letter-spacing: 1px;
+            font-weight: 300;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .clock-container {
+                padding: 30px 40px;
+                margin: 20px;
+            }
+
+            .date {
+                letter-spacing: 1px;
+            }
+
+            .time {
+                letter-spacing: 2px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .clock-container {
+                padding: 25px 30px;
+                border-radius: 20px;
+            }
+        }
+
+        /* 深色模式支持 */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            }
+        }
+
+        /* 时钟边框装饰 */
+        .clock-container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
+            border-radius: 30px;
+            opacity: 0;
+            z-index: -1;
+            transition: opacity 0.3s ease;
+            background-size: 400% 400%;
+            animation: gradient 15s ease infinite;
+        }
+
+        .clock-container:hover::before {
+            opacity: 0.7;
+        }
+
+        @keyframes gradient {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 背景粒子效果 -->
+    <div class="particles" id="particles"></div>
+
+    <!-- 时钟容器 -->
+    <div class="clock-container">
+        <div class="date" id="date"></div>
+        <div class="time" id="time"></div>
+        <div class="weekday" id="weekday"></div>
+    </div>
+
+    <script>
+        // 星期数组
+        const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+
+        // 格式化数字为两位数
+        function formatNumber(num) {
+            return num.toString().padStart(2, '0');
+        }
+
+        // 更新时钟
+        function updateClock() {
+            const now = new Date();
+            
+            // 获取日期组件
+            const year = now.getFullYear();
+            const month = formatNumber(now.getMonth() + 1);
+            const day = formatNumber(now.getDate());
+            
+            // 获取时间组件
+            const hours = formatNumber(now.getHours());
+            const minutes = formatNumber(now.getMinutes());
+            const seconds = formatNumber(now.getSeconds());
+            
+            // 获取星期
+            const weekday = weekdays[now.getDay()];
+            
+            // 更新日期显示
+            document.getElementById('date').textContent = `${year}年${month}月${day}日`;
+            
+            // 更新时间显示，添加冒号闪烁效果
+            document.getElementById('time').innerHTML = 
+                `<span class="time-digit">${hours[0]}</span>` +
+                `<span class="time-digit">${hours[1]}</span>` +
+                `<span class="colon">:</span>` +
+                `<span class="time-digit">${minutes[0]}</span>` +
+                `<span class="time-digit">${minutes[1]}</span>` +
+                `<span class="colon">:</span>` +
+                `<span class="time-digit">${seconds[0]}</span>` +
+                `<span class="time-digit">${seconds[1]}</span>`;
+            
+            // 更新星期显示
+            document.getElementById('weekday').textContent = weekday;
+        }
+
+        // 创建背景粒子
+        function createParticles() {
+            const particlesContainer = document.getElementById('particles');
+            const particleCount = 50;
+            
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 20 + 's';
+                particle.style.animationDuration = (15 + Math.random() * 10) + 's';
+                particlesContainer.appendChild(particle);
+            }
+        }
+
+        // 初始化
+        function init() {
+            // 创建粒子效果
+            createParticles();
+            
+            // 立即更新一次时钟
+            updateClock();
+            
+            // 每秒更新时钟
+            setInterval(updateClock, 1000);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', init);
+
+        // 添加页面可见性API支持，当页面不可见时暂停更新
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                // 页面隐藏时可以暂停更新以节省资源
+                console.log('时钟已暂停');
+            } else {
+                // 页面重新可见时立即更新
+                updateClock();
+                console.log('时钟已恢复');
+            }
+        });
+    </script>
+</body>
+</html>

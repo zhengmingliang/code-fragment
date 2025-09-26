@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数字时钟</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@latest/dist/full.css" rel="stylesheet">
+<!--    <link rel="stylesheet" href="css/style.css">-->
+    <style>
+        /* 数字时钟样式 */
+
+        /* 时钟容器 */
+        .clock-container {
+            max-width: 500px;
+            width: 90%;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* 日期文字样式 */
+        .date-text {
+            font-size: 2.5rem;
+            letter-spacing: 0.05em;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 星期文字样式 */
+        .weekday-text {
+            font-size: 1.5rem;
+            opacity: 0.8;
+            font-weight: 500;
+        }
+
+        /* 时间文字样式 */
+        .time-text {
+            font-size: 4rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+            font-family: 'Courier New', monospace;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .clock-container {
+                width: 95%;
+                padding: 1.5rem;
+            }
+
+            .date-text {
+                font-size: 1.8rem;
+            }
+
+            .weekday-text {
+                font-size: 1.2rem;
+            }
+
+            .time-text {
+                font-size: 2.8rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .clock-container {
+                padding: 1rem;
+            }
+
+            .date-text {
+                font-size: 1.5rem;
+            }
+
+            .weekday-text {
+                font-size: 1rem;
+            }
+
+            .time-text {
+                font-size: 2.2rem;
+            }
+        }
+
+        /* 超小屏幕适配 */
+        @media (max-width: 320px) {
+            .date-text {
+                font-size: 1.3rem;
+            }
+
+            .time-text {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body class="bg-base-300 min-h-screen flex items-center justify-center">
+    <div class="clock-container card bg-base-100 shadow-xl p-8 text-center">
+        <div class="clock-content">
+            <!-- 日期显示区域 -->
+            <div class="date-section mb-4">
+                <div id="date-display" class="text-primary font-bold date-text">
+                    2025年08月05日
+                </div>
+                <div id="weekday-display" class="text-secondary weekday-text mt-2">
+                    星期一
+                </div>
+            </div>
+            
+            <!-- 时间显示区域 -->
+            <div class="time-section">
+                <div id="time-display" class="text-accent font-mono time-text">
+                    06:27:15
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 数字时钟类
+         */
+        class DigitalClock {
+            constructor() {
+                this.dateElement = document.getElementById('date-display');
+                this.weekdayElement = document.getElementById('weekday-display');
+                this.timeElement = document.getElementById('time-display');
+                this.timer = null;
+                this.weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+            }
+
+            /**
+             * 初始化时钟
+             */
+            init() {
+                this.updateDisplay();
+                this.startTimer();
+            }
+
+            /**
+             * 获取当前时间数据
+             * @returns {Object} 时间数据对象
+             */
+            getCurrentTime() {
+                const now = new Date();
+                return {
+                    year: now.getFullYear(),
+                    month: now.getMonth() + 1,
+                    day: now.getDate(),
+                    weekday: this.getWeekday(now.getDay()),
+                    hours: this.formatTime(now.getHours()),
+                    minutes: this.formatTime(now.getMinutes()),
+                    seconds: this.formatTime(now.getSeconds())
+                };
+            }
+
+            /**
+             * 更新显示内容
+             */
+            updateDisplay() {
+                const timeData = this.getCurrentTime();
+
+                // 更新日期显示
+                const dateString = `${timeData.year}年${this.formatTime(timeData.month)}月${this.formatTime(timeData.day)}日`;
+                if (this.dateElement.textContent !== dateString) {
+                    this.dateElement.textContent = dateString;
+                }
+
+                // 更新星期显示
+                if (this.weekdayElement.textContent !== timeData.weekday) {
+                    this.weekdayElement.textContent = timeData.weekday;
+                }
+
+                // 更新时间显示，移除动画效果
+                const timeString = `${timeData.hours}:${timeData.minutes}:${timeData.seconds}`;
+                if (this.timeElement.textContent !== timeString) {
+                    this.timeElement.textContent = timeString;
+                }
+            }
+
+            /**
+             * 格式化时间数字（补零）
+             * @param {number} value - 时间数值
+             * @returns {string} 格式化后的字符串
+             */
+            formatTime(value) {
+                return value.toString().padStart(2, '0');
+            }
+
+            /**
+             * 获取星期几
+             * @param {number} dayIndex - 星期索引（0-6）
+             * @returns {string} 星期几的中文表示
+             */
+            getWeekday(dayIndex) {
+                return this.weekdays[dayIndex];
+            }
+
+            /**
+             * 启动定时器
+             */
+            startTimer() {
+                // 清除可能存在的定时器
+                if (this.timer) {
+                    clearInterval(this.timer);
+                }
+
+                // 每秒更新一次
+                this.timer = setInterval(() => {
+                    this.updateDisplay();
+                }, 1000);
+            }
+
+            /**
+             * 停止定时器
+             */
+            stop() {
+                if (this.timer) {
+                    clearInterval(this.timer);
+                    this.timer = null;
+                }
+            }
+        }
+
+        // 页面加载完成后初始化时钟
+        document.addEventListener('DOMContentLoaded', () => {
+            const clock = new DigitalClock();
+            clock.init();
+
+            // 页面卸载时清理定时器
+            window.addEventListener('beforeunload', () => {
+                clock.stop();
+            });
+        });
+
+        // 导出类供其他模块使用
+        // export { DigitalClock };
+    </script>
+</body>
+</html>

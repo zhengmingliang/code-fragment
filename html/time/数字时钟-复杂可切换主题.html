@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            transition: background 0.5s ease, color 0.3s ease;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: #f0f0f0;
+            padding: 20px;
+        }
+
+        body.light-mode {
+            background: linear-gradient(135deg, #56ccf2, #2f80ed, #56ccf2);
+            color: #333;
+        }
+
+        .container {
+            position: relative;
+            text-align: center;
+            padding: 2.5rem;
+            border-radius: 25px;
+            background: rgba(0, 0, 0, 0.7);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(12px);
+            width: 100%;
+            max-width: 500px;
+            overflow: hidden;
+        }
+
+        body.light-mode .container {
+            background: rgba(255, 255, 255, 0.85);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.15);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            font-size: 1.4rem;
+            color: #ffd700;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        body.light-mode .theme-toggle {
+            background: rgba(0, 0, 0, 0.08);
+            color: #333;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.1) rotate(15deg);
+            background: rgba(255, 255, 255, 0.25);
+        }
+
+        body.light-mode .theme-toggle:hover {
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .date-display {
+            font-size: 2.2rem;
+            font-weight: 300;
+            margin: 1.5rem 0 0.5rem;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+        }
+
+        body.light-mode .date-display {
+            color: #333;
+            text-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .time-display {
+            font-size: 4.8rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            margin: 0.5rem 0 1.5rem;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+        }
+
+        body.light-mode .time-display {
+            color: #222;
+            text-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .colon {
+            animation: blink 1.2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .additional-info {
+            display: flex;
+            justify-content: space-around;
+            margin: 2rem 0;
+            padding: 1.2rem 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        body.light-mode .additional-info {
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+            border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        }
+
+        .info-item {
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 0.3rem;
+        }
+
+        .info-value {
+            font-size: 1.4rem;
+            font-weight: 500;
+        }
+
+        .footer {
+            margin-top: 1.5rem;
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 600px) {
+            .container {
+                padding: 1.8rem;
+                border-radius: 20px;
+            }
+
+            .date-display {
+                font-size: 1.8rem;
+            }
+
+            .time-display {
+                font-size: 3.8rem;
+            }
+
+            .theme-toggle {
+                top: 15px;
+                right: 15px;
+                width: 45px;
+                height: 45px;
+                font-size: 1.2rem;
+            }
+
+            .additional-info {
+                flex-direction: column;
+                gap: 1rem;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .date-display {
+                font-size: 1.5rem;
+            }
+
+            .time-display {
+                font-size: 3rem;
+            }
+
+            .theme-toggle {
+                width: 40px;
+                height: 40px;
+                font-size: 1.1rem;
+            }
+        }
+
+        /* 装饰元素 */
+        .decoration {
+            position: absolute;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            z-index: -1;
+        }
+
+        .decoration:nth-child(1) {
+            top: -50px;
+            left: -50px;
+        }
+
+        .decoration:nth-child(2) {
+            bottom: -60px;
+            right: -40px;
+            width: 180px;
+            height: 180px;
+        }
+
+        body.light-mode .decoration {
+            background: radial-gradient(circle, rgba(0,0,0,0.05) 0%, transparent 70%);
+        }
+    </style>
+</head>
+<body class="dark-mode">
+<div class="decoration"></div>
+<div class="decoration"></div>
+
+<div class="container">
+    <div class="theme-toggle" id="themeToggle">
+        <i class="fas fa-moon"></i>
+    </div>
+
+    <div class="date-display" id="dateDisplay">2023年08月15日</div>
+    <div class="time-display" id="timeDisplay">00:00:00</div>
+
+    <div class="additional-info">
+        <div class="info-item">
+            <div class="info-label">星期</div>
+            <div class="info-value" id="weekdayDisplay">星期二</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">第几周</div>
+            <div class="info-value" id="weekNumberDisplay">33</div>
+        </div>
+        <div class="info-item">
+            <div class="info-label">季节</div>
+            <div class="info-value" id="seasonDisplay">夏季</div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <i class="fas fa-sync-alt"></i> 实时更新 | 主题可切换
+    </div>
+</div>
+
+<script>
+    // 获取DOM元素
+    const dateDisplay = document.getElementById('dateDisplay');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const themeToggle = document.getElementById('themeToggle');
+    const weekdayDisplay = document.getElementById('weekdayDisplay');
+    const weekNumberDisplay = document.getElementById('weekNumberDisplay');
+    const seasonDisplay = document.getElementById('seasonDisplay');
+
+    // 星期名称数组
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+
+    // 季节判断函数
+    function getSeason(month) {
+        if (month >= 2 && month <= 4) return '春季';
+        if (month >= 5 && month <= 7) return '夏季';
+        if (month >= 8 && month <= 10) return '秋季';
+        return '冬季';
+    }
+
+    // 更新时间函数
+    function updateTime() {
+        const now = new Date();
+
+        // 格式化日期：yyyy年MM月dd日
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        dateDisplay.textContent = `${year}年${month}月${day}日`;
+
+        // 格式化时间：HH:MM:SS
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+
+        // 添加闪烁的冒号效果
+        timeDisplay.innerHTML = `${hours}<span class="colon">:</span>${minutes}<span class="colon">:</span>${seconds}`;
+
+        // 更新附加信息
+        weekdayDisplay.textContent = weekdays[now.getDay()];
+
+        // 计算一年中的第几周
+        const firstDayOfYear = new Date(now.getFullYear(), 0, 1);
+        const pastDaysOfYear = (now - firstDayOfYear) / 86400000;
+        weekNumberDisplay.textContent = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+
+        // 更新季节
+        seasonDisplay.textContent = getSeason(now.getMonth());
+    }
+
+    // 主题切换功能
+    themeToggle.addEventListener('click', () => {
+        const isDarkMode = document.body.classList.contains('dark-mode');
+
+        if (isDarkMode) {
+            document.body.classList.remove('dark-mode');
+            document.body.classList.add('light-mode');
+            themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+        } else {
+            document.body.classList.remove('light-mode');
+            document.body.classList.add('dark-mode');
+            themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+        }
+    });
+
+    // 初始化时间
+    updateTime();
+
+    // 每秒更新一次时间
+    setInterval(updateTime, 1000);
+</script>
+</body>
+</html>
+

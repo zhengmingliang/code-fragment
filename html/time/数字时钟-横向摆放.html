@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <meta name="description" content="一个现代简约的动态数字时钟，实时显示当前日期和时间">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            background-color: #121212;
+            color: #FFFFFF;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        .clock-container {
+            text-align: center;
+            padding: 20px;
+            user-select: none;
+        }
+        .date {
+            font-size: clamp(1rem, 4vw, 2.5rem);
+            font-weight: 400;
+            color: #A9A9A9;
+            margin-bottom: clamp(10px, 3vw, 30px);
+            letter-spacing: 0.05em;
+        }
+        .time {
+            font-size: clamp(3rem, 15vw, 12rem);
+            font-weight: 700;
+            color: #FFFFFF;
+            line-height: 1;
+            letter-spacing: 0.02em;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
+        }
+        /* 优化移动端体验 */
+        @media (max-width: 480px) {
+            .clock-container {
+                padding: 15px;
+            }
+            
+            .date {
+                font-size: clamp(0.9rem, 6vw, 1.8rem);
+                margin-bottom: clamp(8px, 4vw, 20px);
+            }
+            
+            .time {
+                font-size: clamp(2.5rem, 18vw, 8rem);
+            }
+        }
+        /* 优化平板体验 */
+        @media (min-width: 768px) and (max-width: 1024px) {
+            .date {
+                font-size: clamp(1.2rem, 3vw, 2rem);
+            }
+            
+            .time {
+                font-size: clamp(4rem, 12vw, 10rem);
+            }
+        }
+        /* 优化大屏幕体验 */
+        @media (min-width: 1200px) {
+            .date {
+                font-size: 2.2rem;
+                margin-bottom: 25px;
+            }
+            
+            .time {
+                font-size: 8rem;
+            }
+        }
+        /* 数字等宽效果 */
+        .time {
+            font-variant-numeric: tabular-nums;
+        }
+        /* 加载动画 */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .clock-container {
+            animation: fadeIn 0.8s ease-out;
+        }
+        /* 时间更新的微妙动画 */
+        .time-update {
+            animation: pulse 0.1s ease-in-out;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.01); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <main class="clock-container" role="timer" aria-live="polite">
+        <time id="date-display" class="date" datetime=""></time>
+        <time id="time-display" class="time" datetime=""></time>
+    </main>
+    <script>
+        class DigitalClock {
+            constructor() {
+                this.dateElement = document.getElementById('date-display');
+                this.timeElement = document.getElementById('time-display');
+                this.isRunning = false;
+                this.intervalId = null;
+                
+                this.init();
+            }
+            init() {
+                // 立即显示时间，避免空白
+                this.updateClock();
+                
+                // 开始定时更新
+                this.start();
+                
+                // 页面可见性变化时的处理
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        this.pause();
+                    } else {
+                        this.resume();
+                    }
+                });
+            }
+            formatDate(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}年${month}月${day}日`;
+            }
+            formatTime(date) {
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                return `${hours}:${minutes}:${seconds}`;
+            }
+            formatDateTime(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                
+                return {
+                    date: `${year}-${month}-${day}`,
+                    time: `${hours}:${minutes}:${seconds}`,
+                    datetime: `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+                };
+            }
+            updateClock() {
+                const now = new Date();
+                const formattedDate = this.formatDate(now);
+                const formattedTime = this.formatTime(now);
+                const dateTimeData = this.formatDateTime(now);
+                // 更新显示内容
+                this.dateElement.textContent = formattedDate;
+                this.timeElement.textContent = formattedTime;
+                // 更新datetime属性，便于屏幕阅读器和搜索引擎
+                this.dateElement.setAttribute('datetime', dateTimeData.date);
+                this.timeElement.setAttribute('datetime', dateTimeData.datetime);
+                // 添加微妙的更新动画
+                this.timeElement.classList.add('time-update');
+                setTimeout(() => {
+                    this.timeElement.classList.remove('time-update');
+                }, 100);
+            }
+            start() {
+                if (!this.isRunning) {
+                    this.isRunning = true;
+                    this.intervalId = setInterval(() => {
+                        this.updateClock();
+                    }, 1000);
+                }
+            }
+            pause() {
+                if (this.isRunning && this.intervalId) {
+                    clearInterval(this.intervalId);
+                    this.isRunning = false;
+                }
+            }
+            resume() {
+                if (!this.isRunning) {
+                    this.updateClock(); // 立即更新一次
+                    this.start();
+                }
+            }
+            destroy() {
+                this.pause();
+                this.intervalId = null;
+            }
+        }
+        // 等待DOM完全加载后初始化时钟
+        document.addEventListener('DOMContentLoaded', () => {
+            window.digitalClock = new DigitalClock();
+        });
+        // 页面卸载时清理资源
+        window.addEventListener('beforeunload', () => {
+            if (window.digitalClock) {
+                window.digitalClock.destroy();
+            }
+        });
+        // 错误处理
+        window.addEventListener('error', (event) => {
+            console.error('时钟发生错误:', event.error);
+        });
+    </script>
+</body>
+</html>

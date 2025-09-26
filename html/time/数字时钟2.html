@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .clock-container {
+            text-align: center;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            width: 90%;
+            max-width: 400px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .clock-container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
+            background-size: 400%;
+            border-radius: 20px;
+            z-index: -1;
+            animation: gradient 15s ease infinite;
+            opacity: 0.5;
+        }
+
+        @keyframes gradient {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        .time-display {
+            font-size: clamp(2.5rem, 10vw, 4rem);
+            font-weight: bold;
+            color: #ffffff;
+            letter-spacing: 0.05em;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+            margin-bottom: 15px;
+            white-space: nowrap;
+            overflow: hidden;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.2em;
+        }
+
+        .time-part {
+            display: inline-block;
+            min-width: 1.2em;
+            text-align: center;
+        }
+
+        .colon {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 49% {
+                opacity: 1;
+            }
+            50%, 100% {
+                opacity: 0.3;
+            }
+        }
+
+        .date-display {
+            font-size: clamp(1rem, 3vw, 1.2rem);
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 10px;
+        }
+
+        .timezone-display {
+            font-size: clamp(0.8rem, 2.5vw, 1rem);
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* 浮动背景动画 */
+        .floating-shapes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            z-index: -1;
+        }
+
+        .shape {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 50%;
+        }
+
+        .shape-1 {
+            width: 80px;
+            height: 80px;
+            top: 20%;
+            left: 10%;
+            animation: float 15s infinite ease-in-out;
+        }
+
+        .shape-2 {
+            width: 120px;
+            height: 120px;
+            top: 60%;
+            right: 10%;
+            animation: float 20s infinite ease-in-out;
+        }
+
+        .shape-3 {
+            width: 60px;
+            height: 60px;
+            bottom: 20%;
+            left: 20%;
+            animation: float 18s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0) rotate(0deg);
+            }
+            50% {
+                transform: translateY(-20px) rotate(10deg);
+            }
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 480px) {
+            .clock-container {
+                padding: 20px;
+                width: 95%;
+            }
+            
+            .time-display {
+                letter-spacing: 0.1em;
+            }
+            
+            .time-part {
+                min-width: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="floating-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+    </div>
+
+    <div class="clock-container">
+        <div class="date-display" id="date"></div>
+        <div class="time-display" id="clock">
+            <span class="time-part" id="hours">00</span>
+            <span class="colon">:</span>
+            <span class="time-part" id="minutes">00</span>
+            <span class="colon">:</span>
+            <span class="time-part" id="seconds">00</span>
+        </div>
+        <div class="timezone-display" id="timezone"></div>
+    </div>
+
+    <script>
+        function updateClock() {
+            const now = new Date();
+            
+            // 获取时间各部分
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            
+            // 更新显示
+            document.getElementById('hours').textContent = hours;
+            document.getElementById('minutes').textContent = minutes;
+            document.getElementById('seconds').textContent = seconds;
+        }
+
+        function updateDate() {
+            const now = new Date();
+            const options = { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric', 
+                weekday: 'long' 
+            };
+            const dateString = now.toLocaleDateString('zh-CN', options);
+            document.getElementById('date').textContent = dateString;
+            
+            // 显示时区
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            document.getElementById('timezone').textContent = `时区: ${timezone}`;
+        }
+
+        // 初始化时钟
+        updateClock();
+        updateDate();
+
+        // 每秒更新时钟
+        setInterval(updateClock, 1000);
+        
+        // 每分钟更新日期（避免日期变化时延迟）
+        setInterval(updateDate, 60000);
+        
+        // 页面可见性变化时重新同步时间
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                updateClock();
+                updateDate();
+            }
+        });
+    </script>
+</body>
+</html>

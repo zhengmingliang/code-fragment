@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>数字时钟 - 日期在上，时间在下</title>
+  <style>
+    :root {
+      --font-size-date: 6vw;
+      --font-size-clock: 8vw;
+      --font-size-tz: 2.5vw;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background-color: #111;
+      color: #00ffcc;
+      font-family: 'Courier New', Courier, monospace;
+      text-align: center;
+      box-sizing: border-box;
+      padding: 20px;
+    }
+
+    #date {
+      font-size: var(--font-size-date);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 90vw;
+    }
+
+    #clock {
+      font-size: var(--font-size-clock);
+      line-height: 1.2;
+      margin-top: 2vh;
+    }
+
+    #timezone {
+      margin-top: 1vh;
+      font-size: var(--font-size-tz);
+      color: #aaa;
+      white-space: nowrap;
+    }
+
+    /* 移动端适配 */
+    @media (max-width: 600px) {
+      :root {
+        --font-size-date: 7vw;
+        --font-size-clock: 10vw;
+        --font-size-tz: 3vw;
+      }
+    }
+
+    /* 桌面端优化 */
+    @media (min-width: 1024px) {
+      :root {
+        --font-size-date: 3vw;
+        --font-size-clock: 5vw;
+        --font-size-tz: 1.5vw;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="date">2000年01月01日</div>
+  <div id="clock">00:00:00</div>
+  <div id="timezone">UTC+0</div>
+
+  <script>
+    function updateClock() {
+      const now = new Date();
+
+      // 日期部分 yyyy年MM月dd日
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${year}年${month}月${day}日`;
+      document.getElementById('date').textContent = dateStr;
+
+      // 时间部分 HH:MM:SS
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const timeStr = `${hours}:${minutes}:${seconds}`;
+      document.getElementById('clock').textContent = timeStr;
+
+      // 时区部分
+      const offset = -now.getTimezoneOffset() / 60; // 分钟转小时
+      const tzStr = `UTC${offset >= 0 ? '+' : '-'}${Math.abs(offset)}`;
+      document.getElementById('timezone').textContent = tzStr;
+    }
+
+    setInterval(updateClock, 1000);
+    updateClock(); // 页面加载时立即显示一次
+  </script>
+</body>
+</html>

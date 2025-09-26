@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .clock-container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            animation: fadeIn 1s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .clock-title {
+            color: #ffffff;
+            font-size: 24px;
+            margin-bottom: 30px;
+            font-weight: 300;
+            letter-spacing: 2px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .digital-clock {
+            font-size: 72px;
+            font-weight: 700;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            letter-spacing: 8px;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+            position: relative;
+            display: inline-block;
+            padding: 20px 40px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            transition: all 0.3s ease;
+            white-space: nowrap; /* 【修改点1】强制时钟内容不换行 */
+        }
+
+        .digital-clock:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
+        }
+
+        .time-unit {
+            display: inline-block;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .colon {
+            animation: blink 1s infinite;
+            color: #00ff88;
+            text-shadow: 0 0 10px #00ff88;
+        }
+
+        @keyframes blink {
+            0%, 49% {
+                opacity: 1;
+            }
+            50%, 100% {
+                opacity: 0.3;
+            }
+        }
+
+        .date-display {
+            margin-top: 30px;
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: 300;
+            letter-spacing: 1px;
+            opacity: 0.9;
+        }
+
+        .timezone {
+            margin-top: 15px;
+            color: #00ff88;
+            font-size: 16px;
+            font-weight: 400;
+            letter-spacing: 1px;
+        }
+
+        /* 背景动画 */
+        .bg-animation {
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .bg-animation li {
+            position: absolute;
+            display: block;
+            list-style: none;
+            width: 20px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            animation: animate 25s linear infinite;
+            bottom: -150px;
+        }
+
+        .bg-animation li:nth-child(1) {
+            left: 25%;
+            width: 80px;
+            height: 80px;
+            animation-delay: 0s;
+        }
+
+        .bg-animation li:nth-child(2) {
+            left: 10%;
+            width: 20px;
+            height: 20px;
+            animation-delay: 2s;
+            animation-duration: 12s;
+        }
+
+        .bg-animation li:nth-child(3) {
+            left: 70%;
+            width: 20px;
+            height: 20px;
+            animation-delay: 4s;
+        }
+
+        .bg-animation li:nth-child(4) {
+            left: 40%;
+            width: 60px;
+            height: 60px;
+            animation-delay: 0s;
+            animation-duration: 18s;
+        }
+
+        .bg-animation li:nth-child(5) {
+            left: 65%;
+            width: 20px;
+            height: 20px;
+            animation-delay: 0s;
+        }
+
+        .bg-animation li:nth-child(6) {
+            left: 75%;
+            width: 110px;
+            height: 110px;
+            animation-delay: 3s;
+        }
+
+        .bg-animation li:nth-child(7) {
+            left: 35%;
+            width: 150px;
+            height: 150px;
+            animation-delay: 7s;
+        }
+
+        .bg-animation li:nth-child(8) {
+            left: 50%;
+            width: 25px;
+            height: 25px;
+            animation-delay: 15s;
+            animation-duration: 45s;
+        }
+
+        .bg-animation li:nth-child(9) {
+            left: 20%;
+            width: 15px;
+            height: 15px;
+            animation-delay: 2s;
+            animation-duration: 35s;
+        }
+
+        .bg-animation li:nth-child(10) {
+            left: 85%;
+            width: 150px;
+            height: 150px;
+            animation-delay: 0s;
+            animation-duration: 11s;
+        }
+
+        @keyframes animate {
+            0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+                border-radius: 0;
+            }
+            100% {
+                transform: translateY(-1000px) rotate(720deg);
+                opacity: 0;
+                border-radius: 50%;
+            }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .digital-clock {
+                font-size: 48px;
+                letter-spacing: 4px;
+                padding: 15px 25px;
+            }
+
+            .clock-title {
+                font-size: 20px;
+            }
+
+            .date-display {
+                font-size: 16px;
+            }
+
+            .clock-container {
+                padding: 30px 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .digital-clock {
+                font-size: 36px;
+                letter-spacing: 2px;
+                padding: 10px 15px; /* 【修改点2】在小屏幕上减小左右内边距 */
+            }
+
+            .clock-container {
+                padding: 20px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <ul class="bg-animation">
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+        <li></li>
+    </ul>
+
+    <div class="clock-container">
+        <h1 class="clock-title">数字时钟</h1>
+        <div class="digital-clock" id="digitalClock">
+            <span class="time-unit" id="hours">00</span>
+            <span class="colon">:</span>
+            <span class="time-unit" id="minutes">00</span>
+            <span class="colon">:</span>
+            <span class="time-unit" id="seconds">00</span>
+        </div>
+        <div class="date-display" id="dateDisplay"></div>
+        <div class="timezone" id="timezone"></div>
+    </div>
+
+    <script>
+        function updateClock() {
+            const now = new Date();
+            
+            // 获取时分秒
+            let hours = now.getHours();
+            let minutes = now.getMinutes();
+            let seconds = now.getSeconds();
+            
+            // 格式化为两位数
+            hours = hours.toString().padStart(2, '0');
+            minutes = minutes.toString().padStart(2, '0');
+            seconds = seconds.toString().padStart(2, '0');
+            
+            // 更新时钟显示
+            document.getElementById('hours').textContent = hours;
+            document.getElementById('minutes').textContent = minutes;
+            document.getElementById('seconds').textContent = seconds;
+            
+            // 添加数字变化动画
+            if (seconds === '00') {
+                animateTimeUnit('minutes');
+            }
+            if (minutes === '00' && seconds === '00') {
+                animateTimeUnit('hours');
+            }
+        }
+        
+        function animateTimeUnit(unit) {
+            const element = document.getElementById(unit);
+            element.style.transform = 'scale(1.2)';
+            element.style.color = '#00ff88';
+            
+            setTimeout(() => {
+                element.style.transform = 'scale(1)';
+                element.style.color = '#ffffff';
+            }, 300);
+        }
+        
+        function updateDate() {
+            const now = new Date();
+            const options = { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                weekday: 'long'
+            };
+            const dateString = now.toLocaleDateString('zh-CN', options);
+            document.getElementById('dateDisplay').textContent = dateString;
+        }
+        
+        function updateTimezone() {
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const offset = new Date().getTimezoneOffset();
+            const offsetHours = Math.floor(Math.abs(offset) / 60);
+            const offsetMinutes = Math.abs(offset) % 60;
+            const offsetSign = offset <= 0 ? '+' : '-';
+            
+            document.getElementById('timezone').textContent = 
+                `时区: ${timezone} (UTC${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')})`;
+        }
+        
+        // 初始化时钟
+        updateClock();
+        updateDate();
+        updateTimezone();
+        
+        // 每秒更新时钟
+        setInterval(updateClock, 1000);
+        
+        // 每分钟更新日期（避免日期变化时延迟）
+        setInterval(updateDate, 60000);
+        
+        // 页面可见性变化时重新同步时间
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                updateClock();
+                updateDate();
+            }
+        });
+    </script>
+</body>
+</html>

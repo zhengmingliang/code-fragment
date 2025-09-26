@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<!-- saved from url=(0137)https://agent-cdn.minimax.io/matrix_agent/20250805/408983021776220164/298156120637749/7185943368229117/workspace/digital_clock/index.html -->
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>稳定数字时钟</title>
+    <meta name="description" content="一个稳定优雅的数字时钟，清晰显示当前日期和时间">
+    <link rel="preconnect" href="https://fonts.googleapis.com/">
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+    <link href="./稳定数字时钟_files/css2" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Orbitron', monospace;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            background-attachment: fixed;
+            color: #FFFFFF;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 静态背景装饰 - 避免动画导致的重绘 */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(circle at 25% 25%, rgba(100, 179, 244, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 75% 75%, rgba(120, 255, 198, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+        }
+
+        .clock-container {
+            text-align: center;
+            padding: 50px;
+            user-select: none;
+            position: relative;
+            z-index: 2;
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 
+                0 15px 35px rgba(0, 0, 0, 0.2),
+                0 5px 15px rgba(0, 0, 0, 0.1);
+            
+            /* 固定容器尺寸以避免布局抖动 */
+            min-width: clamp(300px, 90vw, 800px);
+            min-height: clamp(200px, 40vh, 400px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            
+            /* 防止内容溢出导致的布局变化 */
+            contain: layout style;
+            will-change: transform;
+        }
+
+        .date {
+            font-size: clamp(1.2rem, 4vw, 2.5rem);
+            font-weight: 400;
+            color: #a8b2c8;
+            letter-spacing: 0.05em;
+            opacity: 0.9;
+            
+            /* 固定日期容器高度 */
+            height: clamp(1.8rem, 5vw, 3.5rem);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: clamp(20px, 3vw, 35px);
+            
+            /* 确保等宽数字显示 */
+            font-variant-numeric: tabular-nums;
+            
+            /* 固定最小宽度避免日期长度变化导致的抖动 */
+            min-width: clamp(200px, 60vw, 500px);
+        }
+
+        .time {
+            font-size: clamp(3.5rem, 15vw, 12rem);
+            font-weight: 600;
+            color: #ffffff;
+            line-height: 1;
+            letter-spacing: 0.02em;
+            text-shadow: 0 2px 8px rgba(255, 255, 255, 0.1);
+            position: relative;
+            
+            /* 固定时间容器尺寸 */
+            height: clamp(4rem, 16vw, 13rem);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            
+            /* 确保等宽数字显示 */
+            font-variant-numeric: tabular-nums;
+            
+            /* 固定宽度避免字符宽度差异导致的抖动 */
+            min-width: clamp(250px, 80vw, 700px);
+            
+            /* 防止字体加载导致的布局变化 */
+            font-display: swap;
+        }
+
+        /* 稳定的发光效果 - 使用伪元素避免影响主元素布局 */
+        .time::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, 
+                rgba(100, 179, 244, 0.15), 
+                rgba(120, 255, 198, 0.15), 
+                rgba(100, 179, 244, 0.15));
+            border-radius: 10px;
+            filter: blur(20px);
+            z-index: -1;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* 简化的加载动画 - 只在初始化时执行 */
+        @keyframes fadeInSoft {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .clock-container {
+            animation: fadeInSoft 1s ease-out;
+            animation-fill-mode: forwards;
+        }
+
+        /* 完全移除更新动画以避免视觉抖动 */
+        .time-update {
+            /* 不添加任何动画效果，保持完全稳定 */
+        }
+
+        /* 冒号的微妙闪烁 - 使用独立元素避免影响布局 */
+        .colon {
+            display: inline-block;
+            opacity: 1;
+            transition: opacity 0.1s ease-in-out;
+        }
+
+        .colon.blink {
+            opacity: 0.7;
+        }
+
+        /* 优化移动端体验 */
+        @media (max-width: 480px) {
+            .clock-container {
+                padding: 30px;
+                margin: 20px;
+                border-radius: 20px;
+                min-width: clamp(280px, 90vw, 350px);
+                min-height: clamp(180px, 35vh, 300px);
+            }
+            
+            .date {
+                font-size: clamp(1rem, 6vw, 1.8rem);
+                height: clamp(1.5rem, 7vw, 2.5rem);
+                margin-bottom: clamp(15px, 4vw, 25px);
+                min-width: clamp(180px, 85vw, 300px);
+            }
+            
+            .time {
+                font-size: clamp(2.8rem, 18vw, 8rem);
+                height: clamp(3.2rem, 20vw, 9rem);
+                min-width: clamp(200px, 85vw, 400px);
+            }
+        }
+
+        /* 优化平板体验 */
+        @media (min-width: 768px) and (max-width: 1024px) {
+            .date {
+                font-size: clamp(1.4rem, 3vw, 2rem);
+                height: clamp(2rem, 4vw, 2.8rem);
+                min-width: clamp(300px, 70vw, 450px);
+            }
+            
+            .time {
+                font-size: clamp(4.5rem, 12vw, 10rem);
+                height: clamp(5rem, 13vw, 11rem);
+                min-width: clamp(350px, 75vw, 600px);
+            }
+        }
+
+        /* 优化大屏幕体验 */
+        @media (min-width: 1200px) {
+            .clock-container {
+                padding: 60px;
+                min-width: 800px;
+                min-height: 400px;
+            }
+
+            .date {
+                font-size: 2.2rem;
+                height: 3rem;
+                margin-bottom: 30px;
+                min-width: 500px;
+            }
+            
+            .time {
+                font-size: 9rem;
+                height: 10rem;
+                min-width: 700px;
+            }
+        }
+
+        /* 高对比度模式支持 */
+        @media (prefers-contrast: high) {
+            .time {
+                color: #ffffff;
+                text-shadow: none;
+            }
+            
+            .date {
+                color: #cccccc;
+            }
+
+            .time::after {
+                display: none;
+            }
+        }
+
+        /* 减少动画模式支持 */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+
+            .time::after {
+                display: none;
+            }
+
+            .colon {
+                transition: none !important;
+            }
+        }
+
+        /* 深色模式优化 */
+        @media (prefers-color-scheme: light) {
+            body {
+                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                color: #2c3e50;
+            }
+
+            .clock-container {
+                background: rgba(255, 255, 255, 0.7);
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                box-shadow: 
+                    0 15px 35px rgba(0, 0, 0, 0.1),
+                    0 5px 15px rgba(0, 0, 0, 0.05);
+            }
+
+            .time {
+                color: #2c3e50;
+                text-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+
+            .date {
+                color: #5a6c7d;
+            }
+
+            .time::after {
+                background: linear-gradient(45deg, 
+                    rgba(52, 152, 219, 0.1), 
+                    rgba(46, 204, 113, 0.1), 
+                    rgba(52, 152, 219, 0.1));
+            }
+        }
+
+        /* 焦点指示器 */
+        .clock-container:focus-visible {
+            outline: 2px solid rgba(100, 179, 244, 0.5);
+            outline-offset: 4px;
+        }
+
+        /* 状态指示器 - 固定位置避免布局影响 */
+        .status-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(120, 255, 198, 0.7);
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .status-indicator.paused {
+            background: rgba(255, 107, 107, 0.7);
+        }
+
+        /* 确保字体快速加载，避免字体切换导致的布局抖动 */
+        @font-face {
+            font-family: 'Orbitron';
+            font-display: swap;
+        }
+    </style>
+</head>
+<body>
+    <main class="clock-container" role="timer" aria-live="polite" tabindex="0">
+        <div class="status-indicator" id="status-indicator" aria-label="时钟状态"></div>
+        <time id="date-display" class="date" datetime="2025-08-05">2025年08月05日 星期二</time>
+        <time id="time-display" class="time" datetime="2025-08-05T16:05:28" style="opacity: 1;">16:05:28</time>
+    </main>
+
+    <script>
+        class StableDigitalClock {
+            constructor() {
+                this.dateElement = document.getElementById('date-display');
+                this.timeElement = document.getElementById('time-display');
+                this.statusIndicator = document.getElementById('status-indicator');
+                this.clockContainer = document.querySelector('.clock-container');
+                this.isRunning = false;
+                this.intervalId = null;
+                this.lastTimeText = '';
+                this.lastDateText = '';
+                this.colonBlinkTimer = null;
+                
+                this.init();
+            }
+
+            init() {
+                // 立即显示时间，避免空白
+                this.updateClock();
+                
+                // 开始定时更新
+                this.start();
+                
+                // 开始冒号闪烁
+                this.startColonBlink();
+                
+                // 页面可见性变化时的处理
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) {
+                        this.pause();
+                    } else {
+                        this.resume();
+                    }
+                });
+
+                // 添加键盘事件监听（空格键暂停/恢复）
+                this.clockContainer.addEventListener('keydown', (event) => {
+                    if (event.code === 'Space') {
+                        event.preventDefault();
+                        if (this.isRunning) {
+                            this.pause();
+                        } else {
+                            this.resume();
+                        }
+                    }
+                });
+
+                // 点击暂停/恢复
+                this.clockContainer.addEventListener('click', () => {
+                    if (this.isRunning) {
+                        this.pause();
+                    } else {
+                        this.resume();
+                    }
+                });
+            }
+
+            formatDate(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+                const weekday = weekdays[date.getDay()];
+                return `${year}年${month}月${day}日 ${weekday}`;
+            }
+
+            formatTime(date) {
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                return `${hours}:${minutes}:${seconds}`;
+            }
+
+            formatDateTime(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                
+                return {
+                    date: `${year}-${month}-${day}`,
+                    time: `${hours}:${minutes}:${seconds}`,
+                    datetime: `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`
+                };
+            }
+
+            updateClock() {
+                const now = new Date();
+                const formattedDate = this.formatDate(now);
+                const formattedTime = this.formatTime(now);
+                const dateTimeData = this.formatDateTime(now);
+
+                // 只在内容实际变化时更新DOM，避免不必要的重绘
+                if (this.lastDateText !== formattedDate) {
+                    this.dateElement.textContent = formattedDate;
+                    this.dateElement.setAttribute('datetime', dateTimeData.date);
+                    this.lastDateText = formattedDate;
+                }
+
+                if (this.lastTimeText !== formattedTime) {
+                    // 使用textContent而不是innerHTML，避免DOM结构变化
+                    this.timeElement.textContent = formattedTime;
+                    this.timeElement.setAttribute('datetime', dateTimeData.datetime);
+                    this.lastTimeText = formattedTime;
+                }
+            }
+
+            startColonBlink() {
+                // 独立的冒号闪烁逻辑，不影响主要时间更新
+                this.colonBlinkTimer = setInterval(() => {
+                    const colonElements = this.timeElement.querySelectorAll('.colon');
+                    if (colonElements.length === 0) {
+                        // 如果没有冒号元素，给时间字符串添加CSS类
+                        const timeText = this.timeElement.textContent;
+                        if (timeText.includes(':')) {
+                            // 简单的冒号闪烁效果，通过透明度变化实现
+                            this.timeElement.style.opacity = this.timeElement.style.opacity === '0.9' ? '1' : '0.9';
+                            setTimeout(() => {
+                                this.timeElement.style.opacity = '1';
+                            }, 100);
+                        }
+                    }
+                }, 1000);
+            }
+
+            start() {
+                if (!this.isRunning) {
+                    this.isRunning = true;
+                    this.statusIndicator.classList.remove('paused');
+                    this.intervalId = setInterval(() => {
+                        this.updateClock();
+                    }, 1000);
+                }
+            }
+
+            pause() {
+                if (this.isRunning && this.intervalId) {
+                    clearInterval(this.intervalId);
+                    this.isRunning = false;
+                    this.statusIndicator.classList.add('paused');
+                }
+            }
+
+            resume() {
+                if (!this.isRunning) {
+                    this.updateClock(); // 立即更新一次
+                    this.start();
+                }
+            }
+
+            destroy() {
+                this.pause();
+                if (this.colonBlinkTimer) {
+                    clearInterval(this.colonBlinkTimer);
+                }
+                this.intervalId = null;
+                this.colonBlinkTimer = null;
+            }
+        }
+
+        // 等待DOM完全加载后初始化时钟
+        document.addEventListener('DOMContentLoaded', () => {
+            // 预加载字体以避免字体切换导致的布局抖动
+            if ('fonts' in document) {
+                Promise.all([
+                    document.fonts.load('400 16px Orbitron'),
+                    document.fonts.load('600 16px Orbitron'),
+                    document.fonts.load('700 16px Orbitron')
+                ]).then(() => {
+                    // 字体加载完成后初始化时钟
+                    window.digitalClock = new StableDigitalClock();
+                }).catch(() => {
+                    // 即使字体加载失败也要初始化时钟
+                    window.digitalClock = new StableDigitalClock();
+                });
+            } else {
+                window.digitalClock = new StableDigitalClock();
+            }
+        });
+
+        // 页面卸载时清理资源
+        window.addEventListener('beforeunload', () => {
+            if (window.digitalClock) {
+                window.digitalClock.destroy();
+            }
+        });
+
+        // 错误处理
+        window.addEventListener('error', (event) => {
+            console.error('时钟发生错误:', event.error);
+        });
+
+        // 优化性能，减少不必要的重绘
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => {
+                console.log('稳定数字时钟已加载完成');
+            });
+        }
+    </script>
+
+</body></html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', Monaco, monospace;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        .clock-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 90vw;
+            width: auto;
+        }
+
+        .date {
+            color: #ffffff;
+            font-size: clamp(1.5rem, 5vw, 3rem);
+            font-weight: 300;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            letter-spacing: 2px;
+        }
+
+        .time {
+            color: #ffffff;
+            font-size: clamp(2rem, 8vw, 5rem);
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            letter-spacing: 3px;
+            font-family: 'Courier New', Monaco, monospace;
+        }
+
+        .time .colon {
+            animation: blink 2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0.3; }
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .clock-container {
+                padding: 30px 20px;
+                margin: 20px;
+            }
+            
+            .date {
+                margin-bottom: 15px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .clock-container {
+                padding: 25px 15px;
+            }
+            
+            .date {
+                letter-spacing: 1px;
+            }
+            
+            .time {
+                letter-spacing: 2px;
+            }
+        }
+
+        /* 增强视觉效果 */
+        .clock-container::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4, #fcc468, #ff6b6b);
+            border-radius: 22px;
+            z-index: -1;
+            animation: gradient-rotate 3s linear infinite;
+            opacity: 0.8;
+        }
+
+        @keyframes gradient-rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="clock-container">
+        <div class="date" id="date"></div>
+        <div class="time" id="time"></div>
+    </div>
+
+    <script>
+        function updateClock() {
+            const now = new Date();
+            
+            // 格式化日期为 yyyy年MM月dd日
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const dateString = `${year}年${month}月${day}日`;
+            
+            // 格式化时间为 HH:MM:SS
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const timeString = `${hours}<span class="colon">:</span>${minutes}<span class="colon">:</span>${seconds}`;
+            
+            // 更新显示
+            document.getElementById('date').textContent = dateString;
+            document.getElementById('time').innerHTML = timeString;
+        }
+
+        // 立即更新一次
+        updateClock();
+        
+        // 每秒更新时钟
+        setInterval(updateClock, 1000);
+
+        // 添加页面加载动画
+        window.addEventListener('load', function() {
+            const container = document.querySelector('.clock-container');
+            container.style.opacity = '0';
+            container.style.transform = 'scale(0.8)';
+            container.style.transition = 'all 0.5s ease-in-out';
+            
+            setTimeout(() => {
+                container.style.opacity = '1';
+                container.style.transform = 'scale(1)';
+            }, 100);
+        });
+    </script>
+</body>
+</html>

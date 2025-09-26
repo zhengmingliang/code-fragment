@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态数字时钟</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e293b 0%, #7c3aed 50%, #1e293b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Arial', sans-serif;
+            padding: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* 背景装饰 */
+        .bg-decoration {
+            position: fixed;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-decoration::before {
+            content: '';
+            position: absolute;
+            top: 25%;
+            left: 25%;
+            width: 256px;
+            height: 256px;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 50%;
+            filter: blur(60px);
+        }
+
+        .bg-decoration::after {
+            content: '';
+            position: absolute;
+            bottom: 25%;
+            right: 25%;
+            width: 256px;
+            height: 256px;
+            background: rgba(147, 51, 234, 0.1);
+            border-radius: 50%;
+            filter: blur(60px);
+        }
+
+        .clock-container {
+            text-align: center;
+            z-index: 1;
+            position: relative;
+        }
+
+        .clock-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 2rem;
+            gap: 12px;
+        }
+
+        .clock-icon {
+            width: 32px;
+            height: 32px;
+            color: #60a5fa;
+        }
+
+        .clock-title {
+            font-size: 1.5rem;
+            font-weight: 300;
+            color: rgba(255, 255, 255, 0.8);
+            letter-spacing: 1px;
+        }
+
+        .clock-main {
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            padding: 3rem 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-width: 320px;
+        }
+
+        .date-display {
+            margin-bottom: 2rem;
+        }
+
+        .date-text {
+            font-size: 2rem;
+            font-weight: 300;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 0.5rem;
+            letter-spacing: 2px;
+        }
+
+        .weekday-text {
+            font-size: 1.125rem;
+            color: #93c5fd;
+            font-weight: 500;
+        }
+
+        .divider {
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.3), transparent);
+            margin: 1.5rem 0;
+        }
+
+        .time-display {
+            position: relative;
+        }
+
+        .time-text {
+            font-family: 'Courier New', monospace;
+            font-size: 4rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #60a5fa, #a78bfa, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 4px;
+            text-shadow: 0 0 30px rgba(96, 165, 250, 0.3);
+        }
+
+        .time-glow {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            font-family: 'Courier New', monospace;
+            font-size: 4rem;
+            font-weight: bold;
+            color: rgba(96, 165, 250, 0.2);
+            letter-spacing: 4px;
+            filter: blur(2px);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .decorative-dots {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 2rem;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .dot:nth-child(1) {
+            background-color: #60a5fa;
+            animation-delay: 0s;
+        }
+
+        .dot:nth-child(2) {
+            background-color: #a78bfa;
+            animation-delay: 0.15s;
+        }
+
+        .dot:nth-child(3) {
+            background-color: #f472b6;
+            animation-delay: 0.3s;
+        }
+
+        .footer-text {
+            margin-top: 1.5rem;
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .clock-main {
+                padding: 2rem 1.5rem;
+                margin: 0 1rem;
+                min-width: 280px;
+            }
+
+            .clock-title {
+                font-size: 1.25rem;
+            }
+
+            .date-text {
+                font-size: 1.5rem;
+                letter-spacing: 1px;
+            }
+
+            .weekday-text {
+                font-size: 1rem;
+            }
+
+            .time-text, .time-glow {
+                font-size: 2.5rem;
+                letter-spacing: 2px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .clock-main {
+                padding: 1.5rem 1rem;
+            }
+
+            .date-text {
+                font-size: 1.25rem;
+            }
+
+            .time-text, .time-glow {
+                font-size: 2rem;
+                letter-spacing: 1px;
+            }
+
+            .clock-icon {
+                width: 24px;
+                height: 24px;
+            }
+        }
+
+        /* 大屏幕适配 */
+        @media (min-width: 1024px) {
+            .date-text {
+                font-size: 2.5rem;
+            }
+
+            .time-text, .time-glow {
+                font-size: 5rem;
+                letter-spacing: 6px;
+            }
+
+            .clock-main {
+                padding: 4rem 3rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="bg-decoration"></div>
+
+<div class="clock-container">
+    <div class="clock-header">
+        <svg class="clock-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12,6 12,12 16,14"></polyline>
+        </svg>
+        <h1 class="clock-title">数字时钟</h1>
+    </div>
+
+    <div class="clock-main">
+        <div class="date-display">
+            <div class="date-text" id="dateDisplay">2024年01月01日</div>
+            <div class="weekday-text" id="weekdayDisplay">星期一</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="time-display">
+            <div class="time-glow" id="timeGlow">00:00:00</div>
+            <div class="time-text" id="timeDisplay">00:00:00</div>
+        </div>
+
+        <div class="decorative-dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+    </div>
+
+    <div class="footer-text">
+       <!-- 实时更新 • 精确到秒-->
+    </div>
+</div>
+
+<script>
+    // 获取DOM元素
+    const dateDisplay = document.getElementById('dateDisplay');
+    const weekdayDisplay = document.getElementById('weekdayDisplay');
+    const timeDisplay = document.getElementById('timeDisplay');
+    const timeGlow = document.getElementById('timeGlow');
+
+    // 星期数组
+    const weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+
+    // 12/24小时制切换变量
+    let is24Hour = true;
+
+    // 格式化数字，确保两位数显示
+    function padZero(num) {
+        return num.toString().padStart(2, '0');
+    }
+
+    // 格式化日期为 yyyy年MM月dd日
+    function formatDate(date) {
+        const year = date.getFullYear();
+        const month = padZero(date.getMonth() + 1);
+        const day = padZero(date.getDate());
+        return `${year}年${month}月${day}日`;
+    }
+
+    // 格式化时间为 HH:MM:SS，支持12/24小时制切换
+    function formatTime(date) {
+        let hours = date.getHours();
+        const minutes = padZero(date.getMinutes());
+        const seconds = padZero(date.getSeconds());
+
+        if (!is24Hour) {
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            hours = hours % 12;
+            hours = hours ? hours : 12; // 0点显示为12点
+            return `${padZero(hours)}:${minutes}:${seconds} ${ampm}`;
+        }
+
+        return `${padZero(hours)}:${minutes}:${seconds}`;
+    }
+
+    // 获取星期
+    function getWeekday(date) {
+        return weekdays[date.getDay()];
+    }
+
+    // 更新时钟显示
+    function updateClock() {
+        const now = new Date();
+
+        // 更新日期
+        dateDisplay.textContent = formatDate(now);
+        weekdayDisplay.textContent = getWeekday(now);
+
+        // 更新时间
+        const timeString = formatTime(now);
+        timeDisplay.textContent = timeString;
+        timeGlow.textContent = timeString;
+    }
+
+    // 初始化时钟
+    updateClock();
+
+    // 每秒更新一次
+    setInterval(updateClock, 1000);
+
+    // 页面加载完成后的初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 添加页面加载动画
+        document.body.style.opacity = '0';
+        document.body.style.transition = 'opacity 0.5s ease-in-out';
+
+        setTimeout(() => {
+            document.body.style.opacity = '1';
+        }, 100);
+    });
+
+    // 添加键盘事件监听（按F11全屏）
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'F11') {
+            event.preventDefault();
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+    });
+
+    // 添加点击时钟切换12/24小时制的功能
+    timeDisplay.addEventListener('click', function() {
+        is24Hour = !is24Hour;
+        updateClock();
+    });
+</script>
+</body>
+</html>
+
