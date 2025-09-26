@@ -40,8 +40,7 @@
 
 ### 数字时钟-紫色背景.html
 
-![image-20250926221213149](/home/zml/.config/Typora/typora-user-images/image-20250926221213149.png)
+![](https://cdn.dog.alianga.com/2025/09/26/fc640adb1bdb4d9e.png)
 
-### 稳定数字时钟.html
+### ![](https://cdn.dog.alianga.com/2025/09/26/7445833bed91d88d.png)
 
-![image-20250926221224906](/home/zml/.config/Typora/typora-user-images/image-20250926221224906.png)
