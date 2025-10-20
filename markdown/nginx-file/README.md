@@ -1,5 +1,5 @@
 # Nginx 实战指南：仅需两步，打造安全又简单的私人文件服务器
-
+![](https://cdn.dog.alianga.com/2025/10/20/4d09903946a76b3b.png)
 ### 前言
 
 大家好！在日常开发和运维中，我们经常有这样的需求：快速搭建一个临时的文件服务器，用于分享构建产物、日志文件或者一些公共资源。同时，我们希望这个服务器不是完全公开的，至少能通过简单的密码进行保护。
@@ -23,10 +23,6 @@
 
 ![文件列表](https://cdn.dog.alianga.com/2025/10/20/7c760f3b80ec396b.png)
 
-### 用户访问示意图
-
-
-![](https://cdn.dog.alianga.com/2025/10/20/1987a41f03913877.png)
 ---
 
 ### 第一步：配置 Nginx 成为文件服务器
@@ -38,7 +34,7 @@
 ```nginx
 server {
     listen 15001; # 为了安全，避免使用默认的80端口
-    server_name your.server.ip.or.domain;
+    server_name localhost;
 
     # 核心配置：文件服务器
     location / {
@@ -77,7 +73,7 @@ sudo nginx -t  # 检查配置语法是否正确
 sudo nginx -s reload # 重新加载配置
 ```
 
-现在，通过 `http://your.server.ip.or.domain:8080` 访问，你应该已经能看到 `/data/shared-files` 目录下的 `test.txt` 文件了！
+现在，通过 `http://localhost:8080` 访问，你应该已经能看到 `/data/shared-files` 目录下的 `test.txt` 文件了！
 
 ---
 
@@ -87,8 +83,7 @@ sudo nginx -s reload # 重新加载配置
 
 Basic Authentication 是 HTTP 协议内建的一种简单认证方式。它不依赖于复杂的应用层逻辑，配置起来非常方便。
 
-<!-- 在这里插入 image1.html 的截图 -->
-**（此处请将 `image1.html` 在浏览器中打开并截图替换）**
+![](https://cdn.dog.alianga.com/2025/10/20/1987a41f03913877.png)
 
 #### 1. 生成密码文件
 
@@ -148,7 +143,7 @@ admin:$apr1$b5v...$HqgW9aX.PT3.b1g/B.SgM.
 ```nginx
 server {
     listen 15001;
-    server_name your.server.ip.or.domain;
+    server_name localhost;
 
     location / {
         root /data/shared-files;
@@ -177,7 +172,7 @@ sudo nginx -t && sudo nginx -s reload
 
 ### 大功告成！
 
-现在，再次访问 `http://your.server.ip.or.domain:15001`，你的浏览器就会弹出那个熟悉的认证窗口了。输入你设置的 `admin` 用户和密码，验证通过后，即可看到你的文件列表。
+现在，再次访问 `http://localhost:15001`，你的浏览器就会弹出那个熟悉的认证窗口了。输入你设置的 `admin` 用户和密码，验证通过后，即可看到你的文件列表。
 
 ## 番外篇：美化你的文件列表页面
 
@@ -275,10 +270,10 @@ sudo nginx -s reload
 cd /data/shared-files
 
 # 使用 git 克隆主题到当前目录下并把文件拷贝到 .nginxy 文件夹
-#sudo git clone https://github.com/lfelipe1501/Nginxy.git 
+#sudo git clone https://github.com/zhengmingliang/Nginxy.git
 # cp -a Nginxy/Nginxy-Theme .nginxy
 
-wget https://github.com/lfelipe1501/Nginxy/releases/download/v2.1/nginxyV2.zip
+wget https://github.com/zhengmingliang/Nginxy/releases/download/v2.1/nginxyV2.zip
 unzip  nginxyV2.zip
 ```
 > **提示**：目录名前的 `.` 使其成为一个隐藏目录，这样在文件列表中默认不会显示，更加整洁。
@@ -290,7 +285,7 @@ unzip  nginxyV2.zip
 ```nginx
 server {
     listen 15001; # 或者你使用的其他端口
-    server_name your.server.ip.or.domain;
+    server_name localhost;
 
     location / {
         root /data/shared-files;   # 指定文件存放的根目录
@@ -349,3 +344,4 @@ sudo nginx -t && sudo nginx -s reload
 这个方法不仅简单快捷，而且性能和稳定性都由身经百战的 Nginx 提供保障，非常适合用于内部文件分享、临时交付等场景。
 
 希望这篇文章对你有帮助！如果你觉得有用，欢迎点赞、在看和分享。我们下期再见！
+
