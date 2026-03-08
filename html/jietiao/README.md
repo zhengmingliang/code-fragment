@@ -22,8 +22,8 @@
 
 1. **克隆项目**
    ```bash
-   git clone <你的仓库地址>
-   cd <项目目录>
+   git clone https://github.com/zhengmingliang/code-fragment.git
+   cd code-fragment/html/jietiao
    ```
 
 2. **安装依赖**
