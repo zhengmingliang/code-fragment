@@ -1,0 +1,5 @@
+{
+  "name": "标准借条生成器",
+  "description": "生成具有法律效力的正式借条模板，支持在线填写并直接打印，适用于买房、日常借款等场景。",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .font-serif-zh {
+    font-family: "SimSun", "Songti SC", "STSong", serif;
+  }
+}
+
+@media print {
+  body {
+    background-color: white;
+  }
+  
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+
+  .print-container {
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 12mm; /* 缩小页边距以确保一页打印 */
+  }
+}
