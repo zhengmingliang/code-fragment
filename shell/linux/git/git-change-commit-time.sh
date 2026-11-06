@@ -91,7 +91,7 @@ check_env() {
 # ── 加载提交列表 ──────────────────────────────────────────
 load_log() {
   mapfile -t LOG_LINES < <(
-    git log --format="%H|%h|%ad|%s" --date=format:"%Y-%m-%d %H:%M:%S" -25
+    git log --format="%H|%h|%ad|%s" --date=format:"%Y-%m-%d %H:%M:%S" -130
   )
 }
 
