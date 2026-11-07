@@ -16,7 +16,7 @@
 - **5 种预设主题**：深色、浅色、蓝色、紫色、绿色
 - **自定义字体大小**：滚轮调节，支持 12-120px
 - **窗口大小调节**：右下角拖拽缩放，或通过右键菜单选择预设大小/自动适应文字
-- **透明度调节**：标准版支持整体透明度 30%-100%；Qt 版额外支持背景透明度 0%-100%
+- **透明度调节**：支持整体透明度 30%-100%
 - **透明背景**：可一键隐藏窗口背景，仅保留时间/日期文字
 
 ### ⚙️ 系统集成
@@ -26,9 +26,7 @@
 
 ## 📦 安装依赖
 
-### 标准 tkinter 版本
-
-本工具默认版本使用 Python 标准库，无需额外安装依赖：
+本工具使用 Python 标准库，无需额外安装依赖：
 
 ```bash
 # 确保 Python 3.6+ 已安装
@@ -38,20 +36,6 @@ python3 --version
 python3 desktop_clock.py
 ```
 
-### Linux 透明背景增强版
-
-Linux 下 tkinter 的 `-transparentcolor` 通常受 Tk/窗口管理器限制，可能无法真正隐藏背景。若需要 **真正透明背景，仅显示文字**，推荐使用 Qt 版本：
-
-```bash
-# 安装 Qt 依赖，推荐 PySide6
-python3 -m pip install -r requirements-qt.txt
-
-# 运行 Linux 透明背景增强版
-python3 desktop_clock_qt.py
-```
-
-Qt 版本默认启用透明背景，也支持右键菜单关闭透明背景。若背景变黑，可在右键菜单选择 **背景透明度 → 0%**。
-
 ## 🚀 快速开始
 
 ### 1. 运行程序
@@ -60,11 +44,8 @@ Qt 版本默认启用透明背景，也支持右键菜单关闭透明背景。�
 # 进入项目目录
 cd python/desktop-clock
 
-# 标准 tkinter 版本
+# 运行
 python3 desktop_clock.py
-
-# Linux 若需要真正透明背景，使用 Qt 版本
-python3 desktop_clock_qt.py
 ```
 
 ### 2. 基本操作
@@ -73,20 +54,19 @@ python3 desktop_clock_qt.py
 |------|------|
 | **左键拖拽** | 移动窗口位置 |
 | **右下角 ◢ 拖拽** | 调整窗口大小 |
-| **双击** | 切换窗口固定/取消固定 |
+| **双击** | 循环提升窗口图层（普通 → 置顶 → 最上层 → 普通） |
 | **右键** | 显示设置菜单 |
 | **滚轮** | 调节字体大小 |
 
 ### 3. 右键菜单功能
 
-- **固定/取消固定**：切换窗口置顶状态
+- **窗口位置**：切换窗口图层级别（普通窗口 / 窗口总在最上 / 最最最上层），Linux 上若要使用"最最最上层"需要系统已安装 `xdotool` 或 `wmctrl`
 - **字体大小**：放大/缩小，或选择 24/36/48/60/72px 预设值
 - **窗口大小**：自动适应文字、放大/缩小，或选择常用窗口尺寸
 - **显示/隐藏日期**：控制日期显示
 - **开启/关闭透明背景**：隐藏窗口背景，仅保留文字显示
 - **显示/隐藏秒数**：控制秒数显示
 - **主题**：切换预设主题（深色/浅色/蓝色/紫色/绿色）
-- **背景透明度**：Qt 版本支持，只调整背景透明度，0% 时背景完全透明、文字保留
 - **整体透明度**：调节整个窗口透明度（文字和背景一起变透明）
 - **开机自启**：设置/取消开机自动启动
 - **退出**：关闭程序
@@ -107,15 +87,14 @@ python3 desktop_clock_qt.py
   "size": {"width": 420, "height": 150},  // 窗口大小
   "font_size": 48,                        // 字体大小
   "opacity": 0.9,                         // 整体透明度 (0.3-1.0)，文字和背景一起变化
-  "background_opacity": 0.0,              // Qt 版背景透明度 (0.0-1.0)，0 表示仅隐藏背景
-  "transparent_bg": false,                 // 是否启用透明背景
-  "always_on_top": true,                  // 是否置顶
+  "transparent_bg": false,                // 是否启用透明背景
+  "layered_level": "topmost",             // 窗口图层级别：normal（普通）/ topmost（窗口总在最上）/ above_all（最最最上层），Linux above_all 需要 xdotool 或 wmctrl
   "theme": "dark",                        // 主题名称
   "time_format": "%H:%M:%S",              // 时间格式
-  "date_format": "%Y-%m-%d",              // 日期格式
+  "date_format": "%Y-%m-%d",             // 日期格式
   "show_date": true,                      // 是否显示日期
   "show_seconds": true,                   // 是否显示秒数
-  "font_family": "Consolas",              // 字体
+  "font_family": "Consolas",             // 字体
   "startup": false                        // 是否开机自启
 }
 ```
@@ -183,7 +162,7 @@ THEMES["custom"] = {
 ## 🐛 常见问题
 
 ### Q: 窗口被其他窗口遮挡怎么办？
-A: 双击窗口或右键菜单选择"固定窗口"，启用置顶功能。
+A: 右键菜单选择 **窗口位置 → 窗口总在最上**，或切换到 **最最最上层** 覆盖更多场景。Linux 上"最最最上层"需要系统已安装 `xdotool` 或 `wmctrl`。
 
 ### Q: 如何恢复默认设置？
 A: 删除配置文件 `~/.desktopclock/config.json`，重启程序即可。
@@ -202,14 +181,7 @@ A: 可以使用以下任一方式调整：
 - 右键菜单选择 **字体大小** 中的预设字号
 
 ### Q: 透明背景没有效果怎么办？
-A: tkinter 版本使用的是 `-transparentcolor`，该能力在 Linux 下经常不生效。Linux 用户建议使用 Qt 透明背景增强版：
-
-```bash
-python3 -m pip install -r requirements-qt.txt
-python3 desktop_clock_qt.py
-```
-
-Qt 版本使用 `WA_TranslucentBackground`，在 Linux 桌面环境下通常比 tkinter 更可靠。如果开启透明背景后看到黑底，请右键选择 **背景透明度 → 0%**，新版会使用 `rgba(r,g,b,0)` 避免透明背景被渲染成主题黑色。如果仍无效果，请确认系统没有强制禁用窗口合成/特效。
+A: tkinter 版本使用的是 `-transparentcolor`，该能力在 Linux 下经常不生效（受 Tk/窗口管理器限制）。Windows/macOS 下通常正常。若 Linux 下无法透明，可关闭透明背景，改用低整体透明度或匹配桌面颜色的主题色作为替代方案。
 
 ### Q: 字体显示不正常？
 A: 修改配置文件中的 `font_family` 为系统已安装的字体，如：

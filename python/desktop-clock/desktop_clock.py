@@ -13,11 +13,14 @@ DesktopClock - 跨平台桌面时钟工具
 """
 
 import os
+import shutil
+import subprocess
 import sys
 import json
 import platform
 import subprocess
 import logging
+import threading
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 
@@ -42,7 +45,7 @@ DEFAULT_CONFIG = {
     "font_size": 48,
     "opacity": 0.9,
     "transparent_bg": False,
-    "always_on_top": True,
+    "layered_level": "topmost",
     "theme": "dark",
     "time_format": "%H:%M:%S",
     "date_format": "%Y-%m-%d",
@@ -146,7 +149,15 @@ class ConfigManager:
     def get(self, key: str, default=None):
         """获取配置项"""
         return self.config.get(key, default)
-    
+
+    def get_layered_level(self) -> str:
+        """获取窗口图层级别，同时向前兼容旧的 always_on_top 布尔配置。"""
+        raw = self.config.get("layered_level")
+        if raw in ("normal", "topmost", "above_all"):
+            return raw
+        legacy = self.config.get("always_on_top")
+        return "topmost" if legacy else "normal"
+
     def set(self, key: str, value):
         """设置配置项"""
         self.config[key] = value
@@ -394,7 +405,7 @@ class DesktopClock:
         
         # 设置无边框和置顶
         self.root.overrideredirect(True)
-        self.root.attributes("-topmost", self.config.get("always_on_top", True))
+        self._apply_layered()
         
         # 设置透明度
         self.root.attributes("-alpha", self.config.get("opacity", 0.9))
@@ -428,6 +439,184 @@ class DesktopClock:
         except tk.TclError as e:
             logging.warning(f"当前系统不支持透明背景色：{e}")
     
+    def _apply_layered(self):
+        """应用窗口图层级别（普通 / 置顶 / 最上层）。"""
+        level = self.config.get_layered_level()
+        self._stop_keep_above_watcher()
+        if level == "normal":
+            self.root.attributes("-topmost", False)
+        elif level == "topmost":
+            self.root.attributes("-topmost", True)
+        elif level == "above_all":
+            self.root.attributes("-topmost", True)
+            self.root.lift()
+            self._raise_via_ewmh()
+            self._start_keep_above_watcher()
+
+    def _raise_via_ewmh(self):
+        """通过 X11 EWMH 将窗口置到最高图层（覆盖输入法等特殊窗口）。
+        
+        优先用 python-xlib 直接设置 _NET_WM_STATE_ABOVE（最可靠，IME 切换也不会丢失）。
+        缺 python-xlib 时回退到 xdotool/wmctrl。
+        """
+        if sys.platform not in ("linux", "linux2"):
+            return
+        try:
+            wid = self.root.winfo_id()
+        except Exception:
+            return
+
+        if self._xlib_set_above(wid):
+            return
+        # 回退到命令行工具
+        self._raise_via_cli_tools(wid)
+
+    def _xlib_set_above(self, wid) -> bool:
+        """通过 python-xlib 设置 _NET_WM_STATE_ABOVE 并循环 raise。返回是否成功。"""
+        try:
+            from Xlib import display, X, Xatom
+            from Xlib.protocol import event
+        except Exception:
+            return False
+        try:
+            d = display.Display()
+            w = d.create_resource_object("window", int(wid))
+            ABOVE = d.get_atom("_NET_WM_STATE_ABOVE")
+            STATE = d.get_atom("_NET_WM_STATE")
+
+            # 通过 ClientMessage 设置 _NET_WM_STATE = [_NET_WM_STATE_ABOVE, 1]
+            root = d.screen().root
+            ev = event.ClientMessage(
+                window=w,
+                client_type=STATE,
+                data=(32, [1, ABOVE, 0, 1, 0]),
+            )
+            root.send_event(
+                ev,
+                event_mask=X.SubstructureNotifyMask | X.SubstructureRedirectMask,
+            )
+            d.sync()
+            # 用 configure_window 的 stack_mode 直接置顶（raise）
+            w.configure(stack_mode=X.Above)
+            d.sync()
+            return True
+        except Exception as e:
+            logging.warning(f"python-xlib EWMH raise failed: {e}")
+            return False
+
+    def _raise_via_cli_tools(self, wid):
+        """命令行工具回退（xdotool / wmctrl / xprop）。"""
+        raised = False
+
+        # 策略 1：xprop 设 DOCK 类型
+        if shutil.which("xprop"):
+            try:
+                subprocess.run(
+                    ["xprop", "-f", "_NET_WM_WINDOW_TYPE", "32a",
+                     "-id", str(wid), "-set", "_NET_WM_WINDOW_TYPE", "_NET_WM_WINDOW_TYPE_DOCK"],
+                    check=False, capture_output=True,
+                )
+                raised = True
+            except Exception as e:
+                logging.warning(f"xprop set _NET_WM_WINDOW_TYPE failed: {e}")
+
+        # 策略 2：wmctrl add,above
+        if shutil.which("wmctrl"):
+            try:
+                subprocess.run(
+                    ["wmctrl", "-i", "-r", str(wid), "-b", "add,above"],
+                    check=False, capture_output=True,
+                )
+                raised = True
+            except Exception:
+                pass
+
+        # 策略 3：xdotool layer
+        if not raised and shutil.which("xdotool"):
+            try:
+                subprocess.run(
+                    ["xdotool", "set-window", "--overrd", str(wid), "layer", "6"],
+                    check=False, capture_output=True,
+                )
+            except Exception:
+                pass
+
+        # 最后 raise 一次
+        if shutil.which("wmctrl"):
+            subprocess.run(
+                ["wmctrl", "-i", "-r", str(wid), "- activate"],
+                check=False, capture_output=True,
+            )
+        elif shutil.which("xdotool"):
+            subprocess.run(
+                ["xdotool", "windowraise", str(wid)],
+                check=False, capture_output=True,
+            )
+
+        if not raised:
+            logging.warning("above_all: 所有工具均不可用，已回退到 topmost")
+
+    def _start_keep_above_watcher(self):
+        """启动后台守望：定时重新设置 _NET_WM_STATE_ABOVE，防止 IME 切换后被压。
+        
+        仅在 layered_level == 'above_all' 且 Linux 时生效。
+        """
+        if sys.platform not in ("linux", "linux2"):
+            return
+        if self.config.get_layered_level() != "above_all":
+            return
+        if getattr(self, "_keep_above_running", False):
+            return
+        try:
+            wid = int(self.root.winfo_id())
+        except Exception:
+            return
+        self._keep_above_running = True
+
+        def _watch(wid):
+            try:
+                from Xlib import display, X
+            except Exception:
+                return
+            try:
+                d = display.Display()
+                w = d.create_resource_object("window", wid)
+                ABOVE = d.get_atom("_NET_WM_STATE_ABOVE")
+                STATE = d.get_atom("_NET_WM_STATE")
+                # 订阅结构变更（其他窗口激活时触发）
+                w.change_attributes(event_mask=X.StructureNotifyMask | X.PropertyChangeMask)
+
+                root = d.screen().root
+                from Xlib.protocol import event as _ev
+                while self._keep_above_running:
+                    try:
+                        cm = _ev.ClientMessage(
+                            window=w,
+                            client_type=STATE,
+                            data=(32, [1, ABOVE, 0, 1, 0]),
+                        )
+                        root.send_event(
+                            cm,
+                            event_mask=X.SubstructureNotifyMask | X.SubstructureRedirectMask,
+                        )
+                        w.configure(stack_mode=X.Above)
+                        d.sync()
+                    except Exception:
+                        pass
+                    if d.pending_events():
+                        d.next_event()
+                    import time
+                    time.sleep(0.3)
+            except Exception as e:
+                logging.warning(f"keep_above watcher exited: {e}")
+                self._keep_above_running = False
+
+        t = threading.Thread(target=_watch, args=(wid,), daemon=True)
+        t.start()
+
+    def _stop_keep_above_watcher(self):
+        self._keep_above_running = False
+
     def _apply_widget_backgrounds(self):
         """同步窗口和各控件背景色"""
         bg_color = self._get_background_color()
@@ -582,12 +771,11 @@ class DesktopClock:
         self.config.set("size", {"width": width, "height": height})
     
     def _toggle_topmost(self, event):
-        """切换窗口置顶状态"""
-        current = self.root.attributes("-topmost")
-        self.root.attributes("-topmost", not current)
-        self.config.set("always_on_top", not current)
-        self.config.save()
-        logging.info(f"窗口置顶：{'开启' if not current else '关闭'}")
+        """循环切换窗口图层级别：normal → topmost → above_all → normal"""
+        order = ["normal", "topmost", "above_all"]
+        cur = self.config.get_layered_level()
+        nxt = order[(order.index(cur) + 1) % len(order)]
+        self._set_layered(nxt)
     
     def _on_mouse_wheel(self, event):
         """鼠标滚轮调节字体大小（Windows/Mac）"""
@@ -671,15 +859,24 @@ class DesktopClock:
         theme_name = self.config.get("theme", "dark")
         theme = THEMES.get(theme_name, THEMES["dark"])
         
-        menu = Menu(self.root, tearoff=0, 
+        menu = Menu(self.root, tearoff=0,
                     bg=theme["bg"], fg=theme["fg"],
                     activebackground=theme["time_fg"],
                     activeforeground=theme["bg"])
-        
-        # 固定/取消固定
-        is_topmost = self.root.attributes("-topmost")
-        topmost_text = "取消固定" if is_topmost else "固定窗口"
-        menu.add_command(label=topmost_text, command=self._toggle_topmost_menu)
+
+        # 窗口位置（分层）子菜单
+        layered_menu = Menu(menu, tearoff=0,
+                           bg=theme["bg"], fg=theme["fg"],
+                           activebackground=theme["time_fg"],
+                           activeforeground=theme["bg"])
+        current_level = self.config.get_layered_level()
+        level_labels = {"normal": "普通窗口", "topmost": "窗口总在最上", "above_all": "最最最上层"}
+        for level, label in level_labels.items():
+            layered_menu.add_command(
+                label=f"  {label}  " + (" ✓" if level == current_level else ""),
+                command=lambda l=level: self._set_layered(l)
+            )
+        menu.add_cascade(label=f"窗口位置", menu=layered_menu)
         
         menu.add_separator()
         
@@ -792,10 +989,6 @@ class DesktopClock:
         self.config.save()
         logging.info(f"窗口大小：{width}x{height}")
     
-    def _toggle_topmost_menu(self):
-        """从菜单切换置顶"""
-        self._toggle_topmost(None)
-    
     def _toggle_transparent_bg(self):
         """切换透明背景"""
         transparent_bg = not self.config.get("transparent_bg", False)
@@ -856,7 +1049,16 @@ class DesktopClock:
         self.root.attributes("-alpha", opacity)
         self.config.save()
         logging.info(f"透明度：{int(opacity * 100)}%")
-    
+
+    def _set_layered(self, level: str):
+        """设置窗口图层级别并立即应用、持久化。"""
+        self.config.set("layered_level", level)
+        self._apply_layered()
+        self._save_window_size()
+        self.config.save()
+        labels = {"normal": "普通窗口", "topmost": "窗口总在最上", "above_all": "最最最上层"}
+        logging.info(f"窗口位置：{labels.get(level, level)}")
+
     def _toggle_startup(self):
         """切换开机自启"""
         if self.startup_manager.is_enabled():
