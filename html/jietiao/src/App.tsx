@@ -304,22 +304,22 @@ export default function App() {
           </div>
 
           <div className="mt-12 print:mt-6 flex flex-col items-end space-y-5 print:space-y-3 pr-8 print:pr-0 print:text-[14px]">
-            <p className="flex items-center">
+            <p>
               <span className="font-bold">借款人（签字并捺印）：</span>
-              <span className="inline-block w-40 border-b border-black"></span>
+              <span className="inline-block w-40 border-b border-black text-center">　　　　　　　　</span>
             </p>
-            <p className="flex items-center">
+            <p>
               <span className="font-bold">联系电话：</span>
-              <span className="inline-block w-40 border-b border-black"></span>
+              <span className="inline-block w-40 border-b border-black text-center">　　　　　　　　</span>
             </p>
-            <p className="flex items-center">
+            <p>
               <span className="font-bold">常住/送达地址：</span>
               <span className="inline-block w-64 border-b border-black text-center">{formData.borrowerAddress || '　　　　　　　　　　　　　　'}</span>
             </p>
             <p className="mt-6 print:mt-4">
-              <span className="inline-block w-12 border-b border-black text-center"></span> 年 
-              <span className="inline-block w-8 border-b border-black text-center ml-2"></span> 月 
-              <span className="inline-block w-8 border-b border-black text-center ml-2"></span> 日
+              <span className="inline-block w-12 border-b border-black text-center">　　</span> 年 
+              <span className="inline-block w-8 border-b border-black text-center ml-2">　</span> 月 
+              <span className="inline-block w-8 border-b border-black text-center ml-2">　</span> 日
             </p>
           </div>
 
@@ -328,3 +328,4 @@ export default function App() {
     </div>
   );
 }
+
