@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# 日志与运行时数据
+*.log
+logs/
+forwarded_uids.json
+processed_uids.txt
+
+# 备份与临时文件
+*-bak.tar.gz
+*.tar.gz
+*.zip
+*.st
+test_long_text.txt
+
+# 构建产物
+dist/
+build/
+target/
