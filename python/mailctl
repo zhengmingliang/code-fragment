@@ -1,0 +1,914 @@
+#!/usr/bin/env python3
+"""管理 mail_forwarder_pro.py 的配置、服务、诊断和 UID 状态备份。"""
+
+import argparse
+import contextlib
+import datetime
+import fcntl
+import getpass
+import hashlib
+import imaplib
+import importlib.util
+import io
+import json
+import logging
+import math
+import os
+from pathlib import Path
+import re
+import shlex
+import signal
+import smtplib
+import ssl
+import subprocess
+import sys
+import tarfile
+import tempfile
+import threading
+
+
+VERSION = "1.0.0"
+SERVICE_NAME = "mailctl.service"
+SCRIPT_PATH = Path(__file__).resolve()
+FORWARDER_PATH = SCRIPT_PATH.with_name("mail_forwarder_pro.py")
+LEGACY_UID_PATH = SCRIPT_PATH.with_name("forwarded_uids.json")
+ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+class MailctlError(Exception):
+    pass
+
+
+class Paths:
+    def __init__(self, config, state_dir):
+        self.config = Path(config).expanduser().resolve()
+        self.state_dir = Path(state_dir).expanduser().resolve()
+        self.secrets = self.config.parent / "secrets.env"
+        self.uid_state = self.state_dir / "forwarded_uids.json"
+        self.lock = self.state_dir / "run.lock"
+        self.backups = self.state_dir / "backups"
+
+    @property
+    def unit(self):
+        config_home = Path(
+            os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+        ).expanduser().resolve()
+        return config_home / "systemd" / "user" / SERVICE_NAME
+
+
+def info(message):
+    print(f"[OK] {message}")
+
+
+def warn(message):
+    print(f"[WARN] {message}")
+
+
+def fail(message):
+    print(f"[FAIL] {message}", file=sys.stderr)
+
+
+def redact(text, sensitive_values):
+    result = str(text)
+    for value in sorted((str(v) for v in sensitive_values if v), key=len, reverse=True):
+        result = result.replace(value, "***")
+    return result
+
+
+def validate_password(password):
+    if not password:
+        raise MailctlError("邮箱授权码不能为空")
+    for char in ("\x00", "\r", "\n", "\ufeff"):
+        if char in password:
+            raise MailctlError("邮箱授权码包含 systemd 环境文件不支持的字符")
+
+
+def encode_env_value(value):
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def secure_dir(path):
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if path.is_symlink():
+        raise MailctlError(f"私有目录不能是符号链接: {path}")
+    path.chmod(0o700)
+
+
+def write_private_file(path, content):
+    secure_dir(path.parent)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(str(path), flags, 0o600)
+    except FileExistsError:
+        raise MailctlError(f"文件已存在，未覆盖: {path}")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        os.chmod(path, 0o600)
+        handle.write(content)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def atomic_write(path, content, mode=0o644):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.chmod(temp_name, mode)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def fsync_directory(path):
+    fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def private_file_problem(path):
+    if path.is_symlink():
+        return "不能是符号链接"
+    if not path.exists():
+        return "文件不存在"
+    mode = path.stat().st_mode & 0o777
+    if mode & 0o077:
+        return f"权限 {mode:03o} 过宽，应改为 600"
+    return None
+
+
+def read_uid_state(path, missing_ok=True):
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        if missing_ok:
+            return [], b"[]"
+        raise MailctlError(f"UID 状态文件不存在: {path}")
+    except OSError as exc:
+        raise MailctlError(f"无法读取 UID 状态文件 {path}: {exc}")
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise MailctlError(f"UID 状态文件损坏: {path}: {exc}")
+    if not isinstance(data, list) or not all(isinstance(uid, str) for uid in data):
+        raise MailctlError(f"UID 状态文件必须是 UID 字符串数组: {path}")
+    return data, raw
+
+
+def default_config(values):
+    return {
+        "imap_host": values["imap_host"],
+        "imap_port": values["imap_port"],
+        "smtp_host": values["smtp_host"],
+        "smtp_port": values["smtp_port"],
+        "email_account": values["email_account"],
+        "target_email": values["target_email"],
+        "password_env": "MAILCTL_PASSWORD",
+        "check_interval": values["check_interval"],
+        "connection_timeout": values["connection_timeout"],
+        "backup_keep": 10,
+    }
+
+
+def validate_config(config):
+    required = (
+        "imap_host",
+        "smtp_host",
+        "email_account",
+        "target_email",
+        "password_env",
+    )
+    for key in required:
+        value = config.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise MailctlError(f"配置项 {key} 不能为空")
+        if "\r" in value or "\n" in value:
+            raise MailctlError(f"配置项 {key} 不能包含换行符")
+
+    if not ENV_NAME_RE.fullmatch(config["password_env"]):
+        raise MailctlError("password_env 不是合法的环境变量名")
+
+    for key in ("imap_port", "smtp_port"):
+        value = config.get(key)
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 65535:
+            raise MailctlError(f"配置项 {key} 必须是 1-65535 的整数")
+
+    for key in ("check_interval", "connection_timeout"):
+        value = config.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise MailctlError(f"配置项 {key} 必须是数字")
+        if not math.isfinite(value) or value <= 0:
+            raise MailctlError(f"配置项 {key} 必须是有限正数")
+
+    keep = config.get("backup_keep")
+    if isinstance(keep, bool) or not isinstance(keep, int) or not 1 <= keep <= 100:
+        raise MailctlError("配置项 backup_keep 必须是 1-100 的整数")
+    return config
+
+
+def parse_env_file(path):
+    try:
+        content = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        raise MailctlError(f"无法读取秘密文件 {path}: {exc}")
+
+    values = {}
+    for line_number, original in enumerate(content.splitlines(), start=1):
+        line = original.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            raise MailctlError(f"秘密文件第 {line_number} 行缺少 =")
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if not ENV_NAME_RE.fullmatch(key):
+            raise MailctlError(f"秘密文件第 {line_number} 行变量名无效")
+        try:
+            parsed = shlex.split(raw_value.strip(), posix=True)
+        except ValueError as exc:
+            raise MailctlError(f"秘密文件第 {line_number} 行引号无效: {exc}")
+        if len(parsed) > 1:
+            raise MailctlError(f"秘密文件第 {line_number} 行值包含未引用空格")
+        values[key] = parsed[0] if parsed else ""
+    return values
+
+
+def load_config(paths, require_secret=True):
+    try:
+        with paths.config.open("r", encoding="utf-8") as handle:
+            config = json.load(handle)
+    except FileNotFoundError:
+        raise MailctlError(f"配置不存在，请先运行 init: {paths.config}")
+    except json.JSONDecodeError as exc:
+        raise MailctlError(f"配置 JSON 无效: {exc}")
+    except OSError as exc:
+        raise MailctlError(f"无法读取配置: {exc}")
+
+    if not isinstance(config, dict):
+        raise MailctlError("配置文件顶层必须是 JSON 对象")
+    if "password" in config or "email_password" in config:
+        raise MailctlError("密码不应写入 config.json，请使用 secrets.env")
+    validate_config(config)
+
+    password_env = config["password_env"]
+    password = ""
+    if require_secret:
+        password = os.environ.get(password_env)
+        if password is None:
+            password = parse_env_file(paths.secrets).get(password_env, "")
+    if require_secret:
+        if not password:
+            raise MailctlError(
+                f"未找到授权码，请设置 {password_env} 或写入 {paths.secrets}"
+            )
+        validate_password(password)
+    config["_password"] = password
+    return config
+
+
+def sensitive_values(config):
+    return (
+        config.get("_password", ""),
+        config.get("email_account", ""),
+        config.get("target_email", ""),
+    )
+
+
+class RedactingFormatter(logging.Formatter):
+    def __init__(self, secrets):
+        super().__init__("%(asctime)s - %(levelname)s - %(message)s")
+        self.secrets = secrets
+
+    def format(self, record):
+        return redact(super().format(record), self.secrets)
+
+
+def configure_logging(config):
+    handler = logging.StreamHandler()
+    handler.setFormatter(RedactingFormatter(sensitive_values(config)))
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+def load_forwarder():
+    if not FORWARDER_PATH.is_file():
+        raise MailctlError(f"找不到邮件转发器: {FORWARDER_PATH}")
+    spec = importlib.util.spec_from_file_location("mail_forwarder_pro", FORWARDER_PATH)
+    if spec is None or spec.loader is None:
+        raise MailctlError("无法加载邮件转发器模块")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@contextlib.contextmanager
+def instance_lock(paths):
+    secure_dir(paths.state_dir)
+    fd = os.open(str(paths.lock), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise MailctlError("已有 mailctl 实例正在运行")
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode("ascii"))
+        os.fsync(fd)
+        yield
+    finally:
+        os.close(fd)
+
+
+def lock_is_held(paths):
+    if not paths.lock.exists():
+        return False
+    fd = os.open(str(paths.lock), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(fd)
+
+
+def prompt(label, default=None):
+    suffix = f" [{default}]" if default is not None else ""
+    value = input(f"{label}{suffix}: ").strip()
+    return value or (default or "")
+
+
+def cmd_init(args, paths):
+    if paths.config.exists() or paths.secrets.exists():
+        raise MailctlError(
+            f"配置或秘密文件已存在，未覆盖: {paths.config.parent}"
+        )
+
+    values = {
+        "imap_host": args.imap_host or prompt("IMAP 主机", "imap.mxhichina.com"),
+        "imap_port": args.imap_port,
+        "smtp_host": args.smtp_host or prompt("SMTP 主机", "smtp.mxhichina.com"),
+        "smtp_port": args.smtp_port,
+        "email_account": args.account or prompt("源邮箱账号"),
+        "target_email": args.target or prompt("转发目标邮箱"),
+        "check_interval": args.check_interval,
+        "connection_timeout": args.connection_timeout,
+    }
+    password = os.environ.get("MAILCTL_PASSWORD")
+    if password is None:
+        password = getpass.getpass("邮箱授权码（输入不回显）: ")
+    validate_password(password)
+
+    config = validate_config(default_config(values))
+    legacy_path = Path(args.legacy_state).expanduser().resolve()
+    legacy_uids = None
+    if legacy_path.exists():
+        if paths.uid_state.exists():
+            raise MailctlError(
+                f"新 UID 状态已存在，拒绝用旧状态覆盖: {paths.uid_state}"
+            )
+        legacy_uids, _ = read_uid_state(legacy_path, missing_ok=False)
+
+    secure_dir(paths.config.parent)
+    secure_dir(paths.state_dir)
+    secure_dir(paths.backups)
+    created = []
+    try:
+        write_private_file(
+            paths.secrets,
+            f"MAILCTL_PASSWORD={encode_env_value(password)}\n",
+        )
+        created.append(paths.secrets)
+        write_private_file(
+            paths.config,
+            json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+        )
+        created.append(paths.config)
+        if legacy_uids is not None:
+            state_content = json.dumps(legacy_uids, ensure_ascii=False) + "\n"
+        elif paths.uid_state.exists():
+            read_uid_state(paths.uid_state, missing_ok=False)
+            state_content = None
+        else:
+            state_content = "[]\n"
+        if state_content is not None:
+            write_private_file(paths.uid_state, state_content)
+            created.append(paths.uid_state)
+    except Exception:
+        for path in reversed(created):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        raise
+
+    info(f"配置已创建: {paths.config}")
+    info(f"秘密文件已创建: {paths.secrets}")
+    if legacy_uids is not None:
+        info(f"已迁移 {len(legacy_uids)} 个 UID，原文件保留: {legacy_path}")
+    else:
+        info(f"UID 状态文件: {paths.uid_state}")
+    print("下一步: mailctl doctor --network，然后 mailctl install --user")
+    return 0
+
+
+def cmd_run(args, paths):
+    config = load_config(paths)
+    for path in (paths.config, paths.secrets):
+        problem = private_file_problem(path)
+        if problem:
+            raise MailctlError(f"私密文件检查失败 {path}: {problem}")
+    read_uid_state(paths.uid_state, missing_ok=False)
+    configure_logging(config)
+    forwarder = load_forwarder()
+
+    forwarder.IMAP_HOST = config["imap_host"]
+    forwarder.IMAP_PORT = config["imap_port"]
+    forwarder.SMTP_HOST = config["smtp_host"]
+    forwarder.SMTP_PORT = config["smtp_port"]
+    forwarder.EMAIL_ACCOUNT = config["email_account"]
+    forwarder.EMAIL_PASSWORD = config["_password"]
+    forwarder.TARGET_EMAIL = config["target_email"]
+    forwarder.CHECK_INTERVAL = config["check_interval"]
+    forwarder.CONNECTION_TIMEOUT = config["connection_timeout"]
+    forwarder.UID_STORE_FILE = str(paths.uid_state)
+    forwarder.REQUIRE_UID_STORE = True
+    stop_event = threading.Event()
+    forwarder.STOP_EVENT = stop_event
+
+    def handle_term(signum, frame):
+        stop_event.set()
+
+    signal.signal(signal.SIGTERM, handle_term)
+    secure_dir(paths.state_dir)
+    os.chdir(paths.state_dir)
+    logging.info("mailctl 正在启动，UID 状态: %s", paths.uid_state)
+    with instance_lock(paths):
+        forwarder.main()
+    return 0
+
+
+def network_diagnostics(config):
+    results = []
+    timeout = config["connection_timeout"]
+    mail = None
+    try:
+        mail = imaplib.IMAP4_SSL(
+            config["imap_host"],
+            config["imap_port"],
+            timeout=timeout,
+            ssl_context=ssl.create_default_context(),
+        )
+        mail.login(config["email_account"], config["_password"])
+        status, _ = mail.select("INBOX", readonly=True)
+        if status != "OK":
+            raise MailctlError("无法只读选择 INBOX")
+        results.append((True, "IMAP TLS、登录和 INBOX 只读选择正常"))
+    except Exception as exc:
+        results.append((False, f"IMAP 检查失败: {redact(exc, sensitive_values(config))}"))
+    finally:
+        if mail is not None:
+            try:
+                mail.logout()
+            except Exception:
+                pass
+
+    server = None
+    try:
+        server = smtplib.SMTP(
+            config["smtp_host"], config["smtp_port"], timeout=timeout
+        )
+        server.ehlo()
+        server.starttls(context=ssl.create_default_context())
+        server.ehlo()
+        server.login(config["email_account"], config["_password"])
+        results.append((True, "SMTP STARTTLS 和认证正常（未发送邮件）"))
+    except Exception as exc:
+        results.append((False, f"SMTP 检查失败: {redact(exc, sensitive_values(config))}"))
+    finally:
+        if server is not None:
+            try:
+                server.quit()
+            except Exception:
+                try:
+                    server.close()
+                except Exception:
+                    pass
+    return results
+
+
+def cmd_doctor(args, paths):
+    failures = 0
+    try:
+        config = load_config(paths)
+        info(f"配置解析通过: {paths.config}")
+    except MailctlError as exc:
+        fail(str(exc))
+        return 1
+
+    for path in (paths.config, paths.secrets):
+        problem = private_file_problem(path)
+        if problem:
+            fail(f"{path}: {problem}")
+            failures += 1
+        else:
+            info(f"文件权限安全: {path}")
+
+    try:
+        uids, _ = read_uid_state(paths.uid_state)
+        info(f"UID 状态有效，共 {len(uids)} 条: {paths.uid_state}")
+    except MailctlError as exc:
+        fail(str(exc))
+        failures += 1
+
+    for directory in (paths.state_dir, paths.backups):
+        try:
+            if not directory.is_dir():
+                raise MailctlError("目录不存在，请先运行 init")
+            test_file = directory / ".doctor-write-test"
+            with test_file.open("x", encoding="utf-8") as handle:
+                handle.write("ok")
+            test_file.unlink()
+            info(f"目录可写: {directory}")
+        except (OSError, MailctlError) as exc:
+            fail(f"目录不可写 {directory}: {exc}")
+            failures += 1
+
+    if FORWARDER_PATH.is_file():
+        info(f"转发器入口存在: {FORWARDER_PATH}")
+    else:
+        fail(f"转发器入口不存在: {FORWARDER_PATH}")
+        failures += 1
+
+    if paths.unit.is_file():
+        info(f"用户服务已安装: {paths.unit}")
+    else:
+        print(f"[INFO] 用户服务尚未安装: {paths.unit}")
+    print(f"[INFO] 实例锁: {'已持有（运行中）' if lock_is_held(paths) else '空闲'}")
+
+    if args.network:
+        for success, message in network_diagnostics(config):
+            if success:
+                info(message)
+            else:
+                fail(message)
+                failures += 1
+    else:
+        print("[INFO] 未进行网络连接；需要时运行 doctor --network")
+
+    return 1 if failures else 0
+
+
+def systemd_quote(value):
+    text = str(value)
+    if "\r" in text or "\n" in text:
+        raise MailctlError("systemd 路径不能包含换行符")
+    escaped = text.replace("%", "%%").replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def render_unit(paths):
+    python = Path(sys.executable).resolve()
+    exec_start = " ".join(
+        systemd_quote(part)
+        for part in (
+            python,
+            SCRIPT_PATH,
+            "--config",
+            paths.config,
+            "--state-dir",
+            paths.state_dir,
+            "run",
+        )
+    )
+    return f"""[Unit]
+Description=Mail Forwarder managed by mailctl
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={systemd_quote(paths.state_dir)}
+EnvironmentFile={systemd_quote(paths.secrets)}
+ExecStart={exec_start}
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
+"""
+
+
+def run_process(command):
+    try:
+        return subprocess.run(command, check=False).returncode
+    except FileNotFoundError:
+        raise MailctlError(f"命令不存在: {command[0]}")
+
+
+def cmd_install(args, paths):
+    if not args.user:
+        raise MailctlError("目前只支持用户级安装，请使用 install --user")
+    load_config(paths)
+    atomic_write(paths.unit, render_unit(paths), mode=0o644)
+    if run_process(["systemctl", "--user", "daemon-reload"]) != 0:
+        raise MailctlError("systemctl daemon-reload 失败")
+    if run_process(["systemctl", "--user", "enable", SERVICE_NAME]) != 0:
+        raise MailctlError("systemctl enable 失败")
+    info(f"用户服务已安装并启用: {paths.unit}")
+    print("服务尚未启动；确认 doctor 后运行: mailctl start")
+    return 0
+
+
+def cmd_service(args, paths):
+    if not paths.unit.is_file():
+        raise MailctlError("用户服务尚未安装，请先运行 install --user")
+    return run_process(["systemctl", "--user", args.action, SERVICE_NAME])
+
+
+def cmd_status(args, paths):
+    if not paths.unit.is_file():
+        print("[WARN] mailctl 用户服务尚未安装")
+        print(f"  需要先执行: {SCRIPT_PATH} install --user")
+        return 1
+
+    active = subprocess.run(
+        ["systemctl", "--user", "is-active", "--quiet", SERVICE_NAME],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    status = subprocess.run(
+        ["systemctl", "--user", "status", SERVICE_NAME],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    uid_count = 0
+    last_success = "unknown"
+    last_error = "unknown"
+    try:
+        if paths.uid_state.exists():
+            uids, _ = read_uid_state(paths.uid_state)
+            uid_count = len(uids)
+    except MailctlError:
+        pass
+
+    log_lines = None
+    try:
+        log_lines = subprocess.run(
+            [
+                "journalctl",
+                "--user",
+                "-u",
+                SERVICE_NAME,
+                "-n",
+                "20",
+                "--no-pager",
+                "--output=short-iso",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        log_lines = None
+
+    if log_lines and log_lines.stdout.strip():
+        lines = [line for line in log_lines.stdout.splitlines() if line.strip()]
+        for line in reversed(lines):
+            lower = line.lower()
+            if "success" in lower or "转发完成" in lower or "邮件发送成功" in lower:
+                last_success = line
+                break
+        for line in reversed(lines):
+            lower = line.lower()
+            if "fail" in lower or "error" in lower or "异常" in lower:
+                last_error = line
+                break
+
+    print("[INFO] mailctl 用户服务状态")
+    print(f"  service: {'running' if active.returncode == 0 else 'stopped'}")
+    print(f"  unit: {paths.unit}")
+    print(f"  config: {paths.config}")
+    print(f"  state-dir: {paths.state_dir}")
+    print(f"  uid-state: {paths.uid_state}")
+    print(f"  uid-count: {uid_count}")
+    print(f"  lock: {'held' if lock_is_held(paths) else 'free'}")
+    print(f"  last-success: {last_success}")
+    print(f"  last-error: {last_error}")
+
+    health = "healthy"
+    if active.returncode != 0:
+        health = "stopped"
+    elif last_error != "unknown":
+        health = "degraded"
+    print(f"  health: {health}")
+
+    if status.stdout.strip():
+        print(status.stdout.strip())
+    elif status.stderr.strip():
+        print(status.stderr.strip())
+    else:
+        print("  尚无 service 输出；如果刚安装，先执行 mailctl start")
+
+    if active.returncode != 0:
+        print("\n[INFO] 服务未运行；如需启动，请执行: mailctl start")
+        print("[INFO] 若需查看日志，请执行: mailctl logs --lines 50")
+    elif last_error != "unknown":
+        print("\n[INFO] 最近日志中存在失败记录，建议先执行: mailctl logs --lines 50")
+    return active.returncode
+
+
+def cmd_logs(args, paths):
+    if not paths.unit.is_file():
+        print("[WARN] mailctl 用户服务尚未安装")
+        print(f"  需要先执行: {SCRIPT_PATH} install --user")
+        return 1
+
+    command = [
+        "journalctl",
+        "--user",
+        "-u",
+        SERVICE_NAME,
+        "-n",
+        str(args.lines),
+        "--no-pager",
+    ]
+    if args.follow:
+        command.append("--follow")
+
+    print(f"[INFO] 最近 {args.lines} 行日志: {SERVICE_NAME}")
+    try:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        print("[WARN] journalctl 不可用，当前环境缺少 systemd journal 命令")
+        return 1
+
+    combined = (completed.stdout or "").strip() or (completed.stderr or "").strip()
+    if combined:
+        print(combined)
+    else:
+        print("  暂无日志输出；服务可能还没启动，或没有产生日志。")
+        print("  先执行: mailctl start")
+    return completed.returncode
+
+
+def add_archive_bytes(archive, name, content):
+    entry = tarfile.TarInfo(name)
+    entry.size = len(content)
+    entry.mode = 0o600
+    entry.mtime = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+    entry.uid = 0
+    entry.gid = 0
+    entry.uname = ""
+    entry.gname = ""
+    archive.addfile(entry, fileobj=io.BytesIO(content))
+
+
+def cmd_backup(args, paths):
+    config = load_config(paths, require_secret=False)
+    uids, raw = read_uid_state(paths.uid_state, missing_ok=False)
+    secure_dir(paths.backups)
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    archive_path = paths.backups / f"mailctl-{timestamp}.tar.gz"
+    suffix = 1
+    while archive_path.exists():
+        archive_path = paths.backups / f"mailctl-{timestamp}-{suffix}.tar.gz"
+        suffix += 1
+
+    manifest = {
+        "version": VERSION,
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "uid_count": len(uids),
+        "state_sha256": hashlib.sha256(raw).hexdigest(),
+        "state_file": "forwarded_uids.json",
+    }
+    fd, temp_path = tempfile.mkstemp(
+        prefix=".mailctl-", suffix=".tmp", dir=str(paths.backups)
+    )
+    try:
+        with os.fdopen(fd, "wb") as raw_file:
+            with tarfile.open(fileobj=raw_file, mode="w:gz") as archive:
+                add_archive_bytes(archive, "forwarded_uids.json", raw)
+                add_archive_bytes(
+                    archive,
+                    "manifest.json",
+                    json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
+                )
+            raw_file.flush()
+            os.fsync(raw_file.fileno())
+        os.replace(temp_path, archive_path)
+        fsync_directory(paths.backups)
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+    older_archives = sorted(
+        (path for path in paths.backups.glob("mailctl-*.tar.gz") if path != archive_path),
+        key=lambda path: (path.stat().st_mtime_ns, path.name),
+        reverse=True,
+    )
+    for old_archive in older_archives[config["backup_keep"] - 1:]:
+        old_archive.unlink()
+    info(f"已备份 {len(uids)} 个 UID: {archive_path}")
+    print(f"SHA-256: {manifest['state_sha256']}")
+    return 0
+
+
+def default_config_path():
+    return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "mailctl" / "config.json"
+
+
+def default_state_dir():
+    return Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))) / "mailctl"
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="mailctl",
+        description="邮件转发器配置、用户服务、诊断和状态备份工具",
+        epilog="示例: mailctl init && mailctl doctor --network && mailctl install --user",
+    )
+    parser.add_argument("--config", default=str(default_config_path()), help="配置文件路径")
+    parser.add_argument("--state-dir", default=str(default_state_dir()), help="运行状态目录")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init", help="交互创建外部配置并迁移 UID 状态")
+    init_parser.add_argument("--account", help="源邮箱账号")
+    init_parser.add_argument("--target", help="转发目标邮箱")
+    init_parser.add_argument("--imap-host")
+    init_parser.add_argument("--imap-port", type=int, default=993)
+    init_parser.add_argument("--smtp-host")
+    init_parser.add_argument("--smtp-port", type=int, default=587)
+    init_parser.add_argument("--check-interval", type=float, default=5)
+    init_parser.add_argument("--connection-timeout", type=float, default=15)
+    init_parser.add_argument("--legacy-state", default=str(LEGACY_UID_PATH), help="旧 JSON UID 状态路径")
+
+    doctor_parser = subparsers.add_parser("doctor", help="检查配置、状态和可选网络连接")
+    doctor_parser.add_argument("--network", action="store_true", help="登录 IMAP/SMTP，但不读取或发送邮件")
+
+    subparsers.add_parser("run", help="前台运行（供 systemd 调用）")
+
+    install_parser = subparsers.add_parser("install", help="安装用户级 systemd 服务，不自动启动")
+    install_parser.add_argument("--user", action="store_true", help="安装到当前用户")
+
+    for action in ("start", "stop", "restart", "status"):
+        subparsers.add_parser(action, help=f"systemctl --user {action}")
+
+    logs_parser = subparsers.add_parser("logs", help="查看用户服务日志")
+    logs_parser.add_argument("--follow", "-f", action="store_true")
+    logs_parser.add_argument("--lines", "-n", type=int, default=50)
+
+    subparsers.add_parser("backup", help="备份 UID 状态，不包含配置和秘密")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    paths = Paths(args.config, args.state_dir)
+    handlers = {
+        "init": cmd_init,
+        "doctor": cmd_doctor,
+        "run": cmd_run,
+        "install": cmd_install,
+        "logs": cmd_logs,
+        "backup": cmd_backup,
+    }
+    try:
+        if args.command == "status":
+            return cmd_status(args, paths)
+        if args.command in ("start", "stop", "restart"):
+            args.action = args.command
+            return cmd_service(args, paths)
+        return handlers[args.command](args, paths)
+    except MailctlError as exc:
+        fail(str(exc))
+        return 1
+    except KeyboardInterrupt:
+        print("\n已中断", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    sys.exit(main())
